@@ -28,6 +28,7 @@ from django.utils.translation import ugettext_lazy as _
 from taiga.base.api.viewsets import GenericViewSet
 
 from . import event_hooks
+from .exceptions import ActionSyntaxException
 
 #TODO: remove this one and read it when necesary from the project attributes
 HOOK_SECRET_KEY = "tpnIwJDz4e".encode("utf-8")
@@ -70,6 +71,9 @@ class GitHubViewSet(GenericViewSet):
         event_hook_class = self.event_hook_classes.get(event_name, None)
         if event_hook_class is not None:
             event_hook = event_hook_class(payload)
-            event_hook.process_event()
+            try:
+                event_hook.process_event()
+            except ActionSyntaxException as e:
+                raise Http401(e.message)
 
         return Response({})

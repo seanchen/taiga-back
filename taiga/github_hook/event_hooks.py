@@ -14,9 +14,17 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
+import re
+
+from django.utils.translation import ugettext_lazy as _
+
+from taiga.projects.models import Project
+from taiga.projects.issues.models import Issue
+
+from .exceptions import ActionSyntaxException
 
 class BaseEventHook(object):
-  
+
     def __init__(self, payload):
         self.payload = payload
 
@@ -36,6 +44,33 @@ class PushEventHook(BaseEventHook):
             self._process_message(message)
 
     def _process_message(self, message):
-        #TODO: parse message and execute the needed actions
-        #TODO: remove prit
-        print("execute_action_from_message", message)
+        if message is None:
+            return
+
+        p = re.compile("TG-([-\w]+)-(\d+) +#(\w+)")
+        m = p.search(message)
+        if m:
+            project_slug = m.group(1)
+            ref = m.group(2)
+            action = m.group(3)
+            self._execute_action(project_slug, ref, action)
+
+    def _execute_action(self, project_slug, ref, action):
+        # Closing set the issue in the first one of the closed project statuses
+        if action == "close":
+            try:
+                project = Project.objects.get(slug=project_slug)
+            except Project.DoesNotExist:
+                raise ActionSyntaxException(_("The project doesn't exist"))
+
+            try:
+                issue = Issue.objects.get(project=project, ref=ref)
+            except Issue.DoesNotExist:
+                raise ActionSyntaxException(_("The issue doesn't exist"))
+
+            status = project.issue_statuses.filter(is_closed=True).order_by("order").first()
+            if status is None:
+                raise ActionSyntaxException(_("The project needs at least one closed status for issues"))
+
+            issue.status = status
+            issue.save()

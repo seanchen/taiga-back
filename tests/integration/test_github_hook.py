@@ -7,6 +7,10 @@ from django.core.urlresolvers import reverse
 
 from taiga.github_hook.api import GitHubViewSet
 from taiga.github_hook.event_hooks import PushEventHook
+from taiga.github_hook.exceptions import ActionSyntaxException
+from taiga.projects.issues.models import Issue
+
+from .. import factories as f
 
 pytestmark = pytest.mark.django_db
 
@@ -32,7 +36,7 @@ def test_ok_signature(client):
 
 def test_push_event_detected(client):
     url = reverse("github-hook-list")
-    data = {"commits:": [
+    data = {"commits": [
       {"message": "test message"},
     ]}
 
@@ -43,7 +47,34 @@ def test_push_event_detected(client):
             HTTP_X_GITHUB_EVENT="push",
             content_type="application/json")
 
-        # mock.assert_called_once_with(json.dumps(data))
         assert process_event_mock.call_count == 1
 
     assert response.status_code == 200
+
+
+def test_push_event_processing(client):
+    issue = f.IssueFactory.create()
+    closed_status = f.IssueStatusFactory(is_closed=True, project=issue.project)
+    payload = {"commits": [
+        {"message": """test message
+            test   TG-%s-%s    #close   ok
+            bye!
+        """%(issue.project.slug, issue.ref)},
+    ]}
+    ev_hook = PushEventHook(payload)
+    ev_hook.process_event()
+    issue = Issue.objects.get(id=issue.id)
+    assert issue.status.is_closed is True
+
+
+@pytest.mark.xfail(raises=ActionSyntaxException)
+def test_push_event_bad_processing(client):
+        issue = f.IssueFactory.create()
+        payload = {"commits": [
+            {"message": """test message
+                test   TG-%s-%s    #close   ok
+                bye!
+            """%(issue.project.slug, issue.ref)},
+        ]}
+        ev_hook = PushEventHook(payload)
+        ev_hook.process_event()
