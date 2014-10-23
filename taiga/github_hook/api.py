@@ -41,9 +41,10 @@ class GitHubViewSet(GenericViewSet):
     # a dict in request.DATA, we need it raw
     parser_classes = ()
 
-    # This dict associates the event names we are listening for (https://developer.github.com/webhooks/#events)
-    event_hooks = {
-        "push": event_hooks.push
+    # This dict associates the event names we are listening for
+    # with their reponsible classes (extending event_hooks.BaseEventHook)
+    event_hook_classes = {
+        "push": event_hooks.PushEventHook
     }
 
     def _validate_signature(self, request):
@@ -61,17 +62,14 @@ class GitHubViewSet(GenericViewSet):
 
     def create(self, request, *args, **kwargs):
         if not self._validate_signature(request):
-            raise Http400(_("Bad signature"))
+            raise Http401(_("Bad signature"))
 
         event_name = request.META.get("HTTP_X_GITHUB_EVENT", None)
         payload = json.loads(request.body.decode("utf-8"))
 
-        #TODO: remove prints
-        print("Event: ", event_name)
-        print(payload)
-
-        event_hook = self.event_hooks.get(event_name, None)
-        if event_hook is not None:
-            event_hook(payload)
+        event_hook_class = self.event_hook_classes.get(event_name, None)
+        if event_hook_class is not None:
+            event_hook = event_hook_class(payload)
+            event_hook.process_event()
 
         return Response({})

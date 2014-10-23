@@ -14,17 +14,28 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-def execute_action_from_message(message):
-    if message is None:
-        return
 
-    #TODO: parse message and execute the needed actions
-    #TODO: remove prit
-    print(message)
+class BaseEventHook(object):
+  
+    def __init__(self, payload):
+        self.payload = payload
+
+    def process_event(self):
+        raise NotImplementedError("process_event must be overwritten")
 
 
-def push(payload):
-    commits = payload.get("commits", [])
-    for commit in commits:
-        message = commit.get("message", None)
-        execute_action_from_message(message)
+class PushEventHook(BaseEventHook):
+
+    def process_event(self):
+        if self.payload is None:
+            return
+
+        commits = self.payload.get("commits", [])
+        for commit in commits:
+            message = commit.get("message", None)
+            self._process_message(message)
+
+    def _process_message(self, message):
+        #TODO: parse message and execute the needed actions
+        #TODO: remove prit
+        print("execute_action_from_message", message)
