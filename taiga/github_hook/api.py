@@ -80,7 +80,11 @@ class GitHubViewSet(GenericViewSet):
             raise Http401(_("The project doesn't exist"))
 
         event_name = request.META.get("HTTP_X_GITHUB_EVENT", None)
-        payload = json.loads(request.body.decode("utf-8"))
+
+        try:
+            payload = json.loads(request.body.decode("utf-8"))
+        except ValueError as e:
+            raise Http401(_("The payload is not a valid json"))
 
         event_hook_class = self.event_hook_classes.get(event_name, None)
         if event_hook_class is not None:
