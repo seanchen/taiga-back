@@ -25,7 +25,9 @@ def test_bad_signature(client):
 
 
 def test_ok_signature(client):
+    project=f.ProjectFactory()
     url = reverse("github-hook-list")
+    url = "%s?project=%s"%(url, project.id)
     data = {"test:": "data"}
     response = client.post(url, json.dumps(data),
         HTTP_X_HUB_SIGNATURE="sha1=3c8e83fdaa266f81c036ea0b71e98eb5e054581a",
@@ -35,7 +37,9 @@ def test_ok_signature(client):
 
 
 def test_push_event_detected(client):
+    project=f.ProjectFactory()
     url = reverse("github-hook-list")
+    url = "%s?project=%s"%(url, project.id)
     data = {"commits": [
       {"message": "test message"},
     ]}
@@ -57,11 +61,11 @@ def test_push_event_processing(client):
     closed_status = f.IssueStatusFactory(is_closed=True, project=issue.project)
     payload = {"commits": [
         {"message": """test message
-            test   TG-%s-%s    #close   ok
+            test   TG-%s    #close   ok
             bye!
-        """%(issue.project.slug, issue.ref)},
+        """%(issue.ref)},
     ]}
-    ev_hook = PushEventHook(payload)
+    ev_hook = PushEventHook(issue.project, payload)
     ev_hook.process_event()
     issue = Issue.objects.get(id=issue.id)
     assert issue.status.is_closed is True
@@ -76,5 +80,5 @@ def test_push_event_bad_processing(client):
                 bye!
             """%(issue.project.slug, issue.ref)},
         ]}
-        ev_hook = PushEventHook(payload)
+        ev_hook = PushEventHook(issue.project, payload)
         ev_hook.process_event()

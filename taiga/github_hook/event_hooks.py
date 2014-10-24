@@ -25,7 +25,8 @@ from .exceptions import ActionSyntaxException
 
 class BaseEventHook(object):
 
-    def __init__(self, payload):
+    def __init__(self, project, payload):
+        self.project = project
         self.payload = payload
 
     def process_event(self):
@@ -47,28 +48,22 @@ class PushEventHook(BaseEventHook):
         if message is None:
             return
 
-        p = re.compile("TG-([-\w]+)-(\d+) +#(\w+)")
+        p = re.compile("TG-(\d+) +#(\w+)")
         m = p.search(message)
         if m:
-            project_slug = m.group(1)
-            ref = m.group(2)
-            action = m.group(3)
-            self._execute_action(project_slug, ref, action)
+            ref = m.group(1)
+            action = m.group(2)
+            self._execute_action(ref, action)
 
-    def _execute_action(self, project_slug, ref, action):
+    def _execute_action(self, ref, action):
         # Closing set the issue in the first one of the closed project statuses
         if action == "close":
             try:
-                project = Project.objects.get(slug=project_slug)
-            except Project.DoesNotExist:
-                raise ActionSyntaxException(_("The project doesn't exist"))
-
-            try:
-                issue = Issue.objects.get(project=project, ref=ref)
+                issue = Issue.objects.get(project=self.project, ref=ref)
             except Issue.DoesNotExist:
                 raise ActionSyntaxException(_("The issue doesn't exist"))
 
-            status = project.issue_statuses.filter(is_closed=True).order_by("order").first()
+            status = self.project.issue_statuses.filter(is_closed=True).order_by("order").first()
             if status is None:
                 raise ActionSyntaxException(_("The project needs at least one closed status for issues"))
 

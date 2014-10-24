@@ -26,6 +26,7 @@ from django.views.decorators.csrf import csrf_exempt
 from django.utils.translation import ugettext_lazy as _
 
 from taiga.base.api.viewsets import GenericViewSet
+from taiga.projects.models import Project
 
 from . import event_hooks
 from .exceptions import ActionSyntaxException
@@ -58,19 +59,32 @@ class GitHubViewSet(GenericViewSet):
             return False
 
         # HMAC requires its key to be bytes, but data is strings.
+        # TODO: read the secret key from the project attributes
         mac = hmac.new(HOOK_SECRET_KEY, msg=request.body,digestmod=hashlib.sha1)
         return hmac.compare_digest(mac.hexdigest(), signature)
+
+    def _get_project(self, request):
+        project_id = request.GET.get("project", None)
+        try:
+            project = Project.objects.get(id=project_id)
+            return project
+        except Project.DoesNotExist:
+            return None
 
     def create(self, request, *args, **kwargs):
         if not self._validate_signature(request):
             raise Http401(_("Bad signature"))
+
+        project = self._get_project(request)
+        if not project:
+            raise Http401(_("The project doesn't exist"))
 
         event_name = request.META.get("HTTP_X_GITHUB_EVENT", None)
         payload = json.loads(request.body.decode("utf-8"))
 
         event_hook_class = self.event_hook_classes.get(event_name, None)
         if event_hook_class is not None:
-            event_hook = event_hook_class(payload)
+            event_hook = event_hook_class(project, payload)
             try:
                 event_hook.process_event()
             except ActionSyntaxException as e:
