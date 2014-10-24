@@ -18,8 +18,11 @@ import re
 
 from django.utils.translation import ugettext_lazy as _
 
-from taiga.projects.models import Project
+from taiga.projects.models import Project, IssueStatus, TaskStatus, UserStoryStatus
+
 from taiga.projects.issues.models import Issue
+from taiga.projects.tasks.models import Task
+from taiga.projects.userstories.models import UserStory
 
 from .exceptions import ActionSyntaxException
 
@@ -45,27 +48,42 @@ class PushEventHook(BaseEventHook):
             self._process_message(message)
 
     def _process_message(self, message):
+        """
+          The message we will be looking for seems like
+            TG-XX #yyyyyy
+          Where:
+            XX: is the ref for us, issue or task
+            yyyyyy: is the status slug we are setting
+        """
         if message is None:
             return
 
-        p = re.compile("TG-(\d+) +#(\w+)")
+        p = re.compile("TG-(\d+) +#([-\w]+)")
         m = p.search(message)
         if m:
             ref = m.group(1)
-            action = m.group(2)
-            self._execute_action(ref, action)
+            status_slug = m.group(2)
+            self._change_status(ref, status_slug)
 
-    def _execute_action(self, ref, action):
-        # Closing set the issue in the first one of the closed project statuses
-        if action == "close":
-            try:
-                issue = Issue.objects.get(project=self.project, ref=ref)
-            except Issue.DoesNotExist:
-                raise ActionSyntaxException(_("The issue doesn't exist"))
+    def _change_status(self, ref, status_slug):
+        if Issue.objects.filter(project=self.project, ref=ref).exists():
+            modelClass = Issue
+            statusClass = IssueStatus
+        elif Task.objects.filter(ref=ref).exists():
+            modelClass = Task
+            statusClass = TaskStatus
+        elif UserStory.objects.filter(ref=ref).exists():
+            modelClass = UserStory
+            statusClass = UserStoryStatus
+        else:
+            raise ActionSyntaxException(_("The referenced element doesn't exist"))
 
-            status = self.project.issue_statuses.filter(is_closed=True).order_by("order").first()
-            if status is None:
-                raise ActionSyntaxException(_("The project needs at least one closed status for issues"))
+        element = modelClass.objects.get(project=self.project, ref=ref)
 
-            issue.status = status
-            issue.save()
+        try:
+            status = statusClass.objects.get(project=self.project, slug=status_slug)
+        except IssueStatus.DoesNotExist:
+            raise ActionSyntaxException(_("The status doesn't exist"))
+
+        element.status = status
+        element.save()

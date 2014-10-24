@@ -9,6 +9,8 @@ from taiga.github_hook.api import GitHubViewSet
 from taiga.github_hook.event_hooks import PushEventHook
 from taiga.github_hook.exceptions import ActionSyntaxException
 from taiga.projects.issues.models import Issue
+from taiga.projects.tasks.models import Task
+from taiga.projects.userstories.models import UserStory
 
 from .. import factories as f
 
@@ -56,29 +58,79 @@ def test_push_event_detected(client):
     assert response.status_code == 200
 
 
-def test_push_event_processing(client):
-    issue = f.IssueFactory.create()
-    closed_status = f.IssueStatusFactory(is_closed=True, project=issue.project)
+def test_push_event_issue_processing(client):
+    creation_status = f.IssueStatusFactory()
+    new_status = f.IssueStatusFactory(project=creation_status.project)
+    issue = f.IssueFactory.create(status=creation_status, project=creation_status.project)
     payload = {"commits": [
         {"message": """test message
-            test   TG-%s    #close   ok
+            test   TG-%s    #%s   ok
             bye!
-        """%(issue.ref)},
+        """%(issue.ref, new_status.slug)},
     ]}
     ev_hook = PushEventHook(issue.project, payload)
     ev_hook.process_event()
     issue = Issue.objects.get(id=issue.id)
-    assert issue.status.is_closed is True
+    assert issue.status.id == new_status.id
 
 
-@pytest.mark.xfail(raises=ActionSyntaxException)
-def test_push_event_bad_processing(client):
+def test_push_event_task_processing(client):
+    creation_status = f.TaskStatusFactory()
+    new_status = f.TaskStatusFactory(project=creation_status.project)
+    task = f.TaskFactory.create(status=creation_status, project=creation_status.project)
+    payload = {"commits": [
+        {"message": """test message
+            test   TG-%s    #%s   ok
+            bye!
+        """%(task.ref, new_status.slug)},
+    ]}
+    ev_hook = PushEventHook(task.project, payload)
+    ev_hook.process_event()
+    task = Task.objects.get(id=task.id)
+    assert task.status.id == new_status.id
+
+
+def test_push_event_user_story_processing(client):
+    creation_status = f.UserStoryStatusFactory()
+    new_status = f.UserStoryStatusFactory(project=creation_status.project)
+    user_story = f.UserStoryFactory.create(status=creation_status, project=creation_status.project)
+    payload = {"commits": [
+        {"message": """test message
+            test   TG-%s    #%s   ok
+            bye!
+        """%(user_story.ref, new_status.slug)},
+    ]}
+    ev_hook = PushEventHook(user_story.project, payload)
+    ev_hook.process_event()
+    user_story = UserStory.objects.get(id=user_story.id)
+    assert user_story.status.id == new_status.id
+
+
+def test_push_event_bad_processing_non_existing_ref(client):
+        issue_status = f.IssueStatusFactory()
+        payload = {"commits": [
+            {"message": """test message
+                test   TG-6666666    #%s   ok
+                bye!
+            """%(issue_status.slug)},
+        ]}
+        ev_hook = PushEventHook(issue_status.project, payload)
+        with pytest.raises(ActionSyntaxException) as excinfo:
+            ev_hook.process_event()
+
+        assert str(excinfo.value) == "The referenced element doesn't exist"
+
+
+def test_push_event_bad_processing_non_existing_status(client):
         issue = f.IssueFactory.create()
         payload = {"commits": [
             {"message": """test message
-                test   TG-%s-%s    #close   ok
+                test   TG-%s    #non-existing-slug   ok
                 bye!
-            """%(issue.project.slug, issue.ref)},
+            """%(issue.ref)},
         ]}
         ev_hook = PushEventHook(issue.project, payload)
-        ev_hook.process_event()
+        with pytest.raises(ActionSyntaxException) as excinfo:
+            ev_hook.process_event()
+
+        assert str(excinfo.value) == "The status doesn't exist"
