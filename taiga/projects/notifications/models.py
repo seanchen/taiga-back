@@ -43,3 +43,20 @@ class NotifyPolicy(models.Model):
             self.modified_at = timezone.now()
 
         return super().save(*args, **kwargs)
+
+
+class HistoryChangeNotification(models.Model):
+    """
+    This class controls the pending notifications for an object, it should be instantiated
+    or updated when an object requires notifications.
+    """
+    key = models.CharField(primary_key=True, max_length=255, unique=True, editable=False)
+    owner = models.ForeignKey("users.User", null=False, blank=False, related_name="+")
+    created_datetime = models.DateTimeField(null=False, blank=False, auto_now_add=True,
+                                            verbose_name=_("created date time"))
+    updated_datetime = models.DateTimeField(null=False, blank=False, auto_now_add=True,
+                                            verbose_name=_("updated date time"))
+
+    history_entries = models.ManyToManyField("history.HistoryEntry", null=True, blank=True,
+                                             verbose_name="history entries",
+                                             related_name="+")

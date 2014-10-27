@@ -113,7 +113,7 @@ def analize_object_for_watchers(obj:object, history:object):
             obj.watchers.add(user)
 
 
-def get_users_to_notify(obj, *, history) -> list:
+def get_users_to_notify(obj, *, discard_users=None) -> list:
     """
     Get filtered set of users to notify for specified
     model instance and changer.
@@ -138,7 +138,8 @@ def get_users_to_notify(obj, *, history) -> list:
     candidates.update(filter(_can_notify_light, obj.get_participants()))
 
     # Remove the changer from candidates
-    candidates.discard(history.owner)
+    if discard_users:
+        candidates = candidates - set(discard_users)
 
     return frozenset(candidates)
 
@@ -178,16 +179,47 @@ def _make_template_mail(name:str):
     return cls()
 
 
-def send_notifications(obj, *, history, users):
+
+
+
+
+# TODO: import make_key_from_model_object
+from django.utils import timezone
+
+@transaction.atomic
+def send_notifications(obj, *, history):
+    key = make_key_from_model_object(obj)
+    notification, created = (HistoryChangeNotification.objects.select_for_update()
+                             .get_or_create(key=key, user=history.user))
+
+    notification.updated_datetime = timezone.now()
+    notification.save()
+    notification.history_entries.add(history)
+
+
+@transaction.atomic
+def send_sync_notifications(key):
     """
-    Given changed instance, history entry and
+    Given changed instance, calculate the history entry and
     a complete list for users to notify, send
     email to all users.
     """
+
+    #TODO: calculate object from key
+    #TODO: eliminar notification o ignorar
+
+    history = "TODO"
+
+    notification = HistoryChangeNotification.objects.select_for_update().get(key=key)
+
+    # Get a complete list of notifiable users for current
+    # object and send the change notification to them.
+    users = get_users_to_notify(obj, discard_users=[notification.owner])
+    history_entries = tuple(notification.history_entries.all())
+
     context = {"object": obj,
-               "changer": history.owner,
-               "comment": history.comment,
-               "changed_fields": history.values_diff}
+               "changer": notification.owner,
+               "history_entries": history_entries}
 
     template_name = _resolve_template_name(obj, change_type=history.type)
     email = _make_template_mail(template_name)

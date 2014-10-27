@@ -174,7 +174,6 @@ class UserStoryViewSet(OCCResourceMixin, HistoryResourceMixin, WatchedResourceMi
                                     comment=comment,
                                     user=self.request.user)
 
-            self.send_notifications(self.object.generated_from_issue, history)
+            self.send_notifications(self.object.generated_from_issue)
 
         return response
-
