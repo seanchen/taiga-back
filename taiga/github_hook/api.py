@@ -45,7 +45,8 @@ class GitHubViewSet(GenericViewSet):
     # This dict associates the event names we are listening for
     # with their reponsible classes (extending event_hooks.BaseEventHook)
     event_hook_classes = {
-        "push": event_hooks.PushEventHook
+        "push": event_hooks.PushEventHook,
+        "issues": event_hooks.IssuesEventHook,
     }
 
     def _validate_signature(self, project, request):

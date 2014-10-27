@@ -87,3 +87,27 @@ class PushEventHook(BaseEventHook):
 
         element.status = status
         element.save()
+
+class IssuesEventHook(BaseEventHook):
+    def process_event(self):
+        if self.payload.get('action', None) != "opened":
+            return
+
+        subject = self.payload.get('issue', {}).get('title', None)
+        description = self.payload.get('issue', {}).get('body', None)
+        github_reference = self.payload.get('issue', {}).get('number', None)
+
+        if not all([subject, description, github_reference]):
+            raise ActionSyntaxException(_("Invalid issue information"))
+
+        Issue.objects.create(
+            project=self.project,
+            subject=subject,
+            description=description,
+            status=self.project.default_issue_status,
+            type=self.project.default_issue_type,
+            severity=self.project.default_severity,
+            priority=self.project.default_priority,
+            external_reference=['github', github_reference],
+            owner=self.project.owner
+        )
