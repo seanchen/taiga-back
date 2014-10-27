@@ -18,9 +18,13 @@ pytestmark = pytest.mark.django_db
 
 
 def test_bad_signature(client):
+    project=f.ProjectFactory()
     url = reverse("github-hook-list")
+    url = "%s?project=%s"%(url, project.id)
     data = {}
-    response = client.post(url, json.dumps(data), content_type="application/json")
+    response = client.post(url, json.dumps(data),
+        HTTP_X_HUB_SIGNATURE="sha1=badbadbad",
+        content_type="application/json")
     response_content = json.loads(response.content.decode("utf-8"))
     assert response.status_code == 401
     assert "Bad signature" in response_content["_error_message"]
@@ -28,6 +32,8 @@ def test_bad_signature(client):
 
 def test_ok_signature(client):
     project=f.ProjectFactory()
+    github_hook_attributes = f.GitHubHookAttributesFactory(project=project,
+        secret="tpnIwJDz4e")
     url = reverse("github-hook-list")
     url = "%s?project=%s"%(url, project.id)
     data = {"test:": "data"}

@@ -29,10 +29,9 @@ from taiga.base.api.viewsets import GenericViewSet
 from taiga.projects.models import Project
 
 from . import event_hooks
+from . import get_github_hook_attributes
 from .exceptions import ActionSyntaxException
 
-#TODO: remove this one and read it when necesary from the project attributes
-HOOK_SECRET_KEY = "tpnIwJDz4e".encode("utf-8")
 
 class Http401(APIException):
     status_code = 401
@@ -49,7 +48,7 @@ class GitHubViewSet(GenericViewSet):
         "push": event_hooks.PushEventHook
     }
 
-    def _validate_signature(self, request):
+    def _validate_signature(self, project, request):
         x_hub_signature = request.META.get("HTTP_X_HUB_SIGNATURE", None)
         if not x_hub_signature:
             return False
@@ -58,9 +57,8 @@ class GitHubViewSet(GenericViewSet):
         if sha_name != 'sha1':
             return False
 
-        # HMAC requires its key to be bytes, but data is strings.
-        # TODO: read the secret key from the project attributes
-        mac = hmac.new(HOOK_SECRET_KEY, msg=request.body,digestmod=hashlib.sha1)
+        secret = bytes(get_github_hook_attributes(project).secret.encode("utf-8"))
+        mac = hmac.new(secret, msg=request.body,digestmod=hashlib.sha1)
         return hmac.compare_digest(mac.hexdigest(), signature)
 
     def _get_project(self, request):
@@ -72,12 +70,12 @@ class GitHubViewSet(GenericViewSet):
             return None
 
     def create(self, request, *args, **kwargs):
-        if not self._validate_signature(request):
-            raise Http401(_("Bad signature"))
-
         project = self._get_project(request)
         if not project:
             raise Http401(_("The project doesn't exist"))
+
+        if not self._validate_signature(project, request):
+            raise Http401(_("Bad signature"))
 
         event_name = request.META.get("HTTP_X_GITHUB_EVENT", None)
 

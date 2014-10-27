@@ -392,6 +392,14 @@ class AttachmentFactory(Factory):
     attached_file = factory.django.FileField(data=b"File contents")
 
 
+class GitHubHookAttributesFactory(Factory):
+    class Meta:
+        model = "github_hook.GitHubHookAttributes"
+        strategy = factory.CREATE_STRATEGY
+
+    project = factory.SubFactory("tests.factories.ProjectFactory")
+
+
 def create_issue(**kwargs):
     "Create an issue and along with its dependencies."
     owner = kwargs.pop("owner", UserFactory())
