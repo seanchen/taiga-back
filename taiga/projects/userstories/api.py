@@ -30,7 +30,7 @@ from taiga.base import exceptions as exc
 from taiga.base.decorators import list_route
 from taiga.base.api import ModelCrudViewSet
 
-from taiga.projects.notifications import WatchedResourceMixin
+from taiga.projects.notifications.mixins import WatchedResourceMixin
 from taiga.projects.history.mixins import HistoryResourceMixin
 from taiga.projects.occ import OCCResourceMixin
 
@@ -174,6 +174,6 @@ class UserStoryViewSet(OCCResourceMixin, HistoryResourceMixin, WatchedResourceMi
                                     comment=comment,
                                     user=self.request.user)
 
-            self.send_notifications(self.object.generated_from_issue)
+            self.send_notifications(self.object.generated_from_issue, history)
 
         return response
