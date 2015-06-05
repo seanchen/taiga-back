@@ -19,11 +19,11 @@
 
 from functools import update_wrapper
 from django.utils.decorators import classonlymethod
+from django.utils.translation import ugettext as _
 
 from . import views
 from . import mixins
 from . import generics
-from . import pagination
 
 
 class ViewSetMixin(object):
@@ -57,8 +57,8 @@ class ViewSetMixin(object):
                                 "keyword argument to %s(). Don't do that."
                                 % (key, cls.__name__))
             if not hasattr(cls, key):
-                raise TypeError("%s() received an invalid keyword %r" % (
-                    cls.__name__, key))
+                raise TypeError("%s() received an invalid keyword %r"
+                                % (cls.__name__, key))
 
         def view(request, *args, **kwargs):
             self = cls(**initkwargs)
@@ -124,13 +124,13 @@ class GenericViewSet(ViewSetMixin, generics.GenericAPIView):
     """
     pass
 
-class ReadOnlyListViewSet(pagination.HeadersPaginationMixin,
-                          pagination.ConditionalPaginationMixin,
-                          GenericViewSet):
+
+class ReadOnlyListViewSet(GenericViewSet):
     """
     A viewset that provides default `list()` action.
     """
     pass
+
 
 class ReadOnlyModelViewSet(mixins.RetrieveModelMixin,
                            mixins.ListModelMixin,
@@ -154,15 +154,16 @@ class ModelViewSet(mixins.CreateModelMixin,
     pass
 
 
-class ModelCrudViewSet(pagination.HeadersPaginationMixin,
-                       pagination.ConditionalPaginationMixin,
-                       ModelViewSet):
+class ModelCrudViewSet(ModelViewSet):
     pass
 
 
-class ModelListViewSet(pagination.HeadersPaginationMixin,
-                       pagination.ConditionalPaginationMixin,
-                       mixins.RetrieveModelMixin,
+class ModelListViewSet(mixins.RetrieveModelMixin,
                        mixins.ListModelMixin,
                        GenericViewSet):
+    pass
+
+class ModelUpdateRetrieveViewSet(mixins.UpdateModelMixin,
+                                 mixins.RetrieveModelMixin,
+                                 GenericViewSet):
     pass

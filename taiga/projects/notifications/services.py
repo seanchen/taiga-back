@@ -19,6 +19,10 @@ from functools import partial
 from django.apps import apps
 from django.db import IntegrityError
 from django.contrib.contenttypes.models import ContentType
+from django.utils import timezone
+from django.db import transaction
+from django.conf import settings
+from django.utils.translation import ugettext as _
 
 from djmail import template_mail
 
@@ -26,6 +30,13 @@ from taiga.base import exceptions as exc
 from taiga.base.utils.text import strip_lines
 from taiga.projects.notifications.choices import NotifyLevel
 from taiga.projects.history.choices import HistoryType
+from taiga.projects.history.services import (make_key_from_model_object,
+                                             get_last_snapshot_for_key,
+                                             get_model_from_key)
+from taiga.permissions.service import user_has_perm
+from taiga.users.models import User
+
+from .models import HistoryChangeNotification
 
 
 def notify_policy_exists(project, user) -> bool:
@@ -49,7 +60,7 @@ def create_notify_policy(project, user, level=NotifyLevel.notwatch):
                                         user=user,
                                         notify_level=level)
     except IntegrityError as e:
-        raise exc.IntegrityError("Notify exists for specified user and project") from e
+        raise exc.IntegrityError(_("Notify exists for specified user and project")) from e
 
 
 def create_notify_policy_if_not_exists(project, user, level=NotifyLevel.notwatch):
@@ -63,7 +74,7 @@ def create_notify_policy_if_not_exists(project, user, level=NotifyLevel.notwatch
                                                defaults={"notify_level": level})
         return result[0]
     except IntegrityError as e:
-        raise exc.IntegrityError("Notify exists for specified user and project") from e
+        raise exc.IntegrityError(_("Notify exists for specified user and project")) from e
 
 
 def get_notify_policy(project, user):
@@ -113,7 +124,28 @@ def analize_object_for_watchers(obj:object, history:object):
             obj.watchers.add(user)
 
 
-def get_users_to_notify(obj, *, history) -> list:
+def _filter_by_permissions(obj, user):
+    UserStory = apps.get_model("userstories", "UserStory")
+    Issue = apps.get_model("issues", "Issue")
+    Task = apps.get_model("tasks", "Task")
+    WikiPage = apps.get_model("wiki", "WikiPage")
+
+    if isinstance(obj, UserStory):
+        return user_has_perm(user, "view_us", obj)
+    elif isinstance(obj, Issue):
+        return user_has_perm(user, "view_issues", obj)
+    elif isinstance(obj, Task):
+        return user_has_perm(user, "view_tasks", obj)
+    elif isinstance(obj, WikiPage):
+        return user_has_perm(user, "view_wiki_pages", obj)
+    return False
+
+
+def _filter_notificable(user):
+    return user.is_active and not user.is_system
+
+
+def get_users_to_notify(obj, *, discard_users=None) -> list:
     """
     Get filtered set of users to notify for specified
     model instance and changer.
@@ -138,18 +170,21 @@ def get_users_to_notify(obj, *, history) -> list:
     candidates.update(filter(_can_notify_light, obj.get_participants()))
 
     # Remove the changer from candidates
-    candidates.discard(history.owner)
+    if discard_users:
+        candidates = candidates - set(discard_users)
 
+    candidates = filter(partial(_filter_by_permissions, obj), candidates)
+    # Filter disabled and system users
+    candidates = filter(partial(_filter_notificable), candidates)
     return frozenset(candidates)
 
 
-def _resolve_template_name(obj, *, change_type:int) -> str:
+def _resolve_template_name(model:object, *, change_type:int) -> str:
     """
     Ginven an changed model instance and change type,
     return the preformated template name for it.
     """
-    ct = ContentType.objects.get_for_model(obj.__class__)
-
+    ct = ContentType.objects.get_for_model(model)
     # Resolve integer enum value from "change_type"
     # parameter to human readable string
     if change_type == HistoryType.create:
@@ -158,7 +193,6 @@ def _resolve_template_name(obj, *, change_type:int) -> str:
         change_type = "change"
     else:
         change_type = "delete"
-
     tmpl = "{app_label}/{model}-{change}"
     return tmpl.format(app_label=ct.app_label,
                        model=ct.model,
@@ -171,26 +205,77 @@ def _make_template_mail(name:str):
     instance for specified name, and return an instance
     of it.
     """
-    cls = type("TemplateMail",
-               (template_mail.TemplateMail,),
+    cls = type("InlineCSSTemplateMail",
+               (template_mail.InlineCSSTemplateMail,),
                {"name": name})
 
     return cls()
 
 
-def send_notifications(obj, *, history, users):
+@transaction.atomic
+def send_notifications(obj, *, history):
+    if history.is_hidden:
+        return None
+
+    key = make_key_from_model_object(obj)
+    owner = User.objects.get(pk=history.user["pk"])
+    notification, created = (HistoryChangeNotification.objects.select_for_update()
+                             .get_or_create(key=key,
+                                            owner=owner,
+                                            project=obj.project,
+                                            history_type = history.type))
+
+    notification.updated_datetime = timezone.now()
+    notification.save()
+    notification.history_entries.add(history)
+
+    # Get a complete list of notifiable users for current
+    # object and send the change notification to them.
+    notify_users = get_users_to_notify(obj, discard_users=[notification.owner])
+    for notify_user in notify_users:
+        notification.notify_users.add(notify_user)
+
+    # If we are the min interval is 0 it just work in a synchronous and spamming way
+    if settings.CHANGE_NOTIFICATIONS_MIN_INTERVAL == 0:
+        send_sync_notifications(notification.id)
+
+@transaction.atomic
+def send_sync_notifications(notification_id):
     """
-    Given changed instance, history entry and
+    Given changed instance, calculate the history entry and
     a complete list for users to notify, send
     email to all users.
     """
-    context = {"object": obj,
-               "changer": history.owner,
-               "comment": history.comment,
-               "changed_fields": history.values_diff}
 
-    template_name = _resolve_template_name(obj, change_type=history.type)
+    notification = HistoryChangeNotification.objects.select_for_update().get(pk=notification_id)
+    # If the las modification is too recent we ignore it
+    now = timezone.now()
+    time_diff = now - notification.updated_datetime
+    if time_diff.seconds < settings.CHANGE_NOTIFICATIONS_MIN_INTERVAL:
+        return
+
+    history_entries = tuple(notification.history_entries.all().order_by("created_at"))
+    obj, _ = get_last_snapshot_for_key(notification.key)
+    obj_class = get_model_from_key(obj.key)
+
+    context = {"obj_class": obj_class,
+               "snapshot": obj.snapshot,
+               "project": notification.project,
+               "changer": notification.owner,
+               "history_entries": history_entries}
+
+    model = get_model_from_key(notification.key)
+    template_name = _resolve_template_name(model, change_type=notification.history_type)
     email = _make_template_mail(template_name)
 
-    for user in users:
+    for user in notification.notify_users.distinct():
+        context["user"] = user
+        context["lang"] = user.lang or settings.LANGUAGE_CODE
         email.send(user.email, context)
+
+    notification.delete()
+
+
+def process_sync_notifications():
+    for notification in HistoryChangeNotification.objects.all():
+        send_sync_notifications(notification.pk)

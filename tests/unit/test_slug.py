@@ -18,8 +18,22 @@
 from taiga.projects.models import Project
 from taiga.users.models import User
 
+from taiga.base.utils.slug import slugify
+
 import pytest
 pytestmark = pytest.mark.django_db
+
+
+def test_slugify_1():
+    assert slugify("漢字") == "han-zi"
+
+
+def test_slugify_2():
+    assert slugify("TestExamplePage") == "testexamplepage"
+
+
+def test_slugify_3():
+    assert slugify(None) == ""
 
 
 def test_project_slug_with_special_chars():
@@ -28,6 +42,7 @@ def test_project_slug_with_special_chars():
     project.save()
 
     assert project.slug == "test-han-zi"
+
 
 def test_project_with_existing_name_slug_with_special_chars():
     user = User.objects.create(username="test")

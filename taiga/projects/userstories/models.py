@@ -20,10 +20,12 @@ from django.conf import settings
 from django.utils.translation import ugettext_lazy as _
 from django.utils import timezone
 
-from taiga.projects.occ import OCCModelMixin
-from taiga.projects.notifications import WatchedModelMixin
-from taiga.projects.mixins.blocked import BlockedMixin
+from djorm_pgarray.fields import TextArrayField
+
 from taiga.base.tags import TaggedMixin
+from taiga.projects.occ import OCCModelMixin
+from taiga.projects.notifications.mixins import WatchedModelMixin
+from taiga.projects.mixins.blocked import BlockedMixin
 
 
 class RolePoints(models.Model):
@@ -46,6 +48,9 @@ class RolePoints(models.Model):
     def __str__(self):
         return "{}: {}".format(self.role.name, self.points.name)
 
+    @property
+    def project(self):
+        return self.user_story.project
 
 class UserStory(OCCModelMixin, WatchedModelMixin, BlockedMixin, TaggedMixin, models.Model):
     ref = models.BigIntegerField(db_index=True, null=True, blank=True, default=None,
@@ -62,8 +67,6 @@ class UserStory(OCCModelMixin, WatchedModelMixin, BlockedMixin, TaggedMixin, mod
                                related_name="user_stories", verbose_name=_("status"),
                                on_delete=models.SET_NULL)
     is_closed = models.BooleanField(default=False)
-    is_archived = models.BooleanField(default=False, null=False, blank=True,
-                                      verbose_name=_("archived"))
     points = models.ManyToManyField("projects.Points", null=False, blank=False,
                                     related_name="userstories", through="RolePoints",
                                     verbose_name=_("points"))
@@ -97,6 +100,7 @@ class UserStory(OCCModelMixin, WatchedModelMixin, BlockedMixin, TaggedMixin, mod
                                              on_delete=models.SET_NULL,
                                              related_name="generated_user_stories",
                                              verbose_name=_("generated from issue"))
+    external_reference = TextArrayField(default=None, verbose_name=_("external reference"))
     _importing = None
 
     class Meta:
@@ -123,9 +127,14 @@ class UserStory(OCCModelMixin, WatchedModelMixin, BlockedMixin, TaggedMixin, mod
         return self.role_points
 
     def get_total_points(self):
+        not_null_role_points = [rp for rp in self.role_points.all() if rp.points.value is not None]
+
+        #If we only have None values the sum should be None
+        if not not_null_role_points:
+            return None
+
         total = 0.0
-        for rp in self.role_points.select_related("points"):
-            if rp.points.value:
-                total += rp.points.value
+        for rp in not_null_role_points:
+            total += rp.points.value
 
         return total

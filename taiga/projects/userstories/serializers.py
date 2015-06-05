@@ -14,15 +14,20 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-import json
 from django.apps import apps
-from rest_framework import serializers
+from taiga.base.api import serializers
+from taiga.base.fields import TagsField
+from taiga.base.fields import PgArrayField
+from taiga.base.neighbors import NeighborsSerializerMixin
+from taiga.base.utils import json
 
-from taiga.base.serializers import Serializer, PickleField, NeighborsSerializerMixin
 from taiga.mdrender.service import render as mdrender
-from taiga.projects.validators import ProjectExistsValidator, UserStoryStatusExistsValidator
+from taiga.projects.validators import ProjectExistsValidator
+from taiga.projects.validators import UserStoryStatusExistsValidator
 from taiga.projects.userstories.validators import UserStoryExistsValidator
 from taiga.projects.notifications.validators import WatchersValidator
+from taiga.projects.serializers import UserStoryStatusSerializer
+from taiga.users.serializers import BasicInfoSerializer as UserBasicInfoSerializer
 
 from . import models
 
@@ -38,7 +43,8 @@ class RolePointsField(serializers.WritableField):
 
 
 class UserStorySerializer(WatchersValidator, serializers.ModelSerializer):
-    tags = PickleField(default=[], required=False)
+    tags = TagsField(default=[], required=False)
+    external_reference = PgArrayField(required=False)
     points = RolePointsField(source="role_points", required=False)
     total_points = serializers.SerializerMethodField("get_total_points")
     comment = serializers.SerializerMethodField("get_comment")
@@ -47,6 +53,8 @@ class UserStorySerializer(WatchersValidator, serializers.ModelSerializer):
     origin_issue = serializers.SerializerMethodField("get_origin_issue")
     blocked_note_html = serializers.SerializerMethodField("get_blocked_note_html")
     description_html = serializers.SerializerMethodField("get_description_html")
+    status_extra_info = UserStoryStatusSerializer(source="status", required=False, read_only=True)
+    assigned_to_extra_info = UserBasicInfoSerializer(source="assigned_to", required=False, read_only=True)
 
     class Meta:
         model = models.UserStory
@@ -89,7 +97,6 @@ class UserStorySerializer(WatchersValidator, serializers.ModelSerializer):
 
 
 class UserStoryNeighborsSerializer(NeighborsSerializerMixin, UserStorySerializer):
-
     def serialize_neighbor(self, neighbor):
         return NeighborUserStorySerializer(neighbor).data
 
@@ -101,8 +108,7 @@ class NeighborUserStorySerializer(serializers.ModelSerializer):
         depth = 0
 
 
-class UserStoriesBulkSerializer(ProjectExistsValidator, UserStoryStatusExistsValidator,
-                                Serializer):
+class UserStoriesBulkSerializer(ProjectExistsValidator, UserStoryStatusExistsValidator, serializers.Serializer):
     project_id = serializers.IntegerField()
     status_id = serializers.IntegerField(required=False)
     bulk_stories = serializers.CharField()
@@ -110,13 +116,11 @@ class UserStoriesBulkSerializer(ProjectExistsValidator, UserStoryStatusExistsVal
 
 ## Order bulk serializers
 
-class _UserStoryOrderBulkSerializer(UserStoryExistsValidator, Serializer):
+class _UserStoryOrderBulkSerializer(UserStoryExistsValidator, serializers.Serializer):
     us_id = serializers.IntegerField()
     order = serializers.IntegerField()
 
 
-class UpdateUserStoriesOrderBulkSerializer(ProjectExistsValidator,
-                                                 UserStoryStatusExistsValidator,
-                                                 Serializer):
+class UpdateUserStoriesOrderBulkSerializer(ProjectExistsValidator, UserStoryStatusExistsValidator, serializers.Serializer):
     project_id = serializers.IntegerField()
     bulk_stories = _UserStoryOrderBulkSerializer(many=True)

@@ -20,8 +20,10 @@ from django.conf import settings
 from django.utils import timezone
 from django.utils.translation import ugettext_lazy as _
 
+from djorm_pgarray.fields import TextArrayField
+
 from taiga.projects.occ import OCCModelMixin
-from taiga.projects.notifications import WatchedModelMixin
+from taiga.projects.notifications.mixins import WatchedModelMixin
 from taiga.projects.mixins.blocked import BlockedMixin
 from taiga.base.tags import TaggedMixin
 
@@ -62,12 +64,13 @@ class Task(OCCModelMixin, WatchedModelMixin, BlockedMixin, TaggedMixin, models.M
     attachments = generic.GenericRelation("attachments.Attachment")
     is_iocaine = models.BooleanField(default=False, null=False, blank=True,
                                      verbose_name=_("is iocaine"))
+    external_reference = TextArrayField(default=None, verbose_name=_("external reference"))
     _importing = None
 
     class Meta:
         verbose_name = "task"
         verbose_name_plural = "tasks"
-        ordering = ["project", "created_date"]
+        ordering = ["project", "created_date", "ref"]
         # unique_together = ("ref", "project")
         permissions = (
             ("view_task", "Can view task"),

@@ -45,26 +45,26 @@ class HistoryEntry(models.Model):
     id = models.CharField(primary_key=True, max_length=255, unique=True,
                           editable=False, default=_generate_uuid)
 
-    user = JsonField(blank=True, default=None, null=True)
+    user = JsonField(null=True, blank=True, default=None)
     created_at = models.DateTimeField(default=timezone.now)
     type = models.SmallIntegerField(choices=HISTORY_TYPE_CHOICES)
-    key = models.CharField(max_length=255, null=True, default=None, blank=True)
+    key = models.CharField(max_length=255, null=True, default=None, blank=True, db_index=True)
 
     # Stores the last diff
-    diff = JsonField(null=True, default=None)
+    diff = JsonField(null=True, blank=True, default=None)
 
     # Stores the last complete frozen object snapshot
-    snapshot = JsonField(null=True, default=None)
+    snapshot = JsonField(null=True, blank=True, default=None)
 
     # Stores a values of all identifiers used in
-    values = JsonField(null=True, default=None)
+    values = JsonField(null=True, blank=True, default=None)
 
     # Stores a comment
     comment = models.TextField(blank=True)
     comment_html = models.TextField(blank=True)
 
     delete_comment_date = models.DateTimeField(null=True, blank=True, default=None)
-    delete_comment_user = JsonField(blank=True, default=None, null=True)
+    delete_comment_user = JsonField(null=True, blank=True, default=None)
 
     # Flag for mark some history entries as
     # hidden. Hidden history entries are important
@@ -76,6 +76,20 @@ class HistoryEntry(models.Model):
     # snapshot. The rest are partial snapshot.
     is_snapshot = models.BooleanField(default=False)
 
+    _importing = None
+
+    @cached_property
+    def is_change(self):
+      return self.type == HistoryType.change
+
+    @cached_property
+    def is_create(self):
+      return self.type == HistoryType.create
+
+    @cached_property
+    def is_delete(self):
+      return self.type == HistoryType.delete
+
     @cached_property
     def owner(self):
         pk = self.user["pk"]
@@ -86,6 +100,19 @@ class HistoryEntry(models.Model):
     def values_diff(self):
         result = {}
         users_keys = ["assigned_to", "owner"]
+
+        def resolve_diff_value(key):
+            value = None
+            diff = get_diff_of_htmls(
+                self.diff[key][0] or "",
+                self.diff[key][1] or ""
+            )
+
+            if diff:
+                key = "{}_diff".format(key)
+                value = (None, diff)
+
+            return (key, value)
 
         def resolve_value(field, key):
             data = self.values[field]
@@ -102,24 +129,12 @@ class HistoryEntry(models.Model):
             #       on old HistoryEntry objects.
             if key == "description_diff":
                 continue
-            elif key == "description":
-                description_diff = get_diff_of_htmls(
-                    self.diff[key][0],
-                    self.diff[key][1]
-                )
-
-                if description_diff:
-                    key = "description_diff"
-                    value = (None, description_diff)
-            elif key == "content":
-                content_diff = get_diff_of_htmls(
-                    self.diff[key][0],
-                    self.diff[key][1]
-                )
-
-                if content_diff:
-                    key = "content_diff"
-                    value = (None, content_diff)
+            elif key == "content_diff":
+                continue
+            elif key == "blocked_note_diff":
+                continue
+            elif key in["description", "content", "blocked_note"]:
+                (key, value) = resolve_diff_value(key)
             elif key in users_keys:
                 value = [resolve_value("users", x) for x in self.diff[key]]
             elif key == "watchers":
@@ -184,6 +199,35 @@ class HistoryEntry(models.Model):
                 if attachments["new"] or attachments["changed"] or attachments["deleted"]:
                     value = attachments
 
+            elif key == "custom_attributes":
+                custom_attributes = {
+                    "new": [],
+                    "changed": [],
+                    "deleted": [],
+                }
+
+                oldcustattrs = {x["id"]:x for x in self.diff["custom_attributes"][0] or []}
+                newcustattrs = {x["id"]:x for x in self.diff["custom_attributes"][1] or []}
+
+                for aid in set(tuple(oldcustattrs.keys()) + tuple(newcustattrs.keys())):
+                    if aid in oldcustattrs and aid in newcustattrs:
+                        changes = make_diff_from_dicts(oldcustattrs[aid], newcustattrs[aid],
+                                                       excluded_keys=("name"))
+
+                        if changes:
+                            change = {
+                                "name": newcustattrs.get(aid, {}).get("name", ""),
+                                "changes": changes
+                            }
+                            custom_attributes["changed"].append(change)
+                    elif aid in oldcustattrs and aid not in newcustattrs:
+                        custom_attributes["deleted"].append(oldcustattrs[aid])
+                    elif aid not in oldcustattrs and aid in newcustattrs:
+                        custom_attributes["new"].append(newcustattrs[aid])
+
+                if custom_attributes["new"] or custom_attributes["changed"] or custom_attributes["deleted"]:
+                    value = custom_attributes
+
             elif key in self.values:
                 value = [resolve_value(key, x) for x in self.diff[key]]
             else:
@@ -198,4 +242,3 @@ class HistoryEntry(models.Model):
 
     class Meta:
         ordering = ["created_at"]
-

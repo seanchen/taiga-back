@@ -1,1 +1,3 @@
-[{{ object.project.name|safe }}] Updated the issue #{{ object.ref|safe }} "{{ object.subject|safe }}"
+{% trans project=project.name|safe, ref=snapshot.ref, subject=snapshot.subject|safe %}
+[{{ project }}] Updated the issue #{{ ref }} "{{ subject }}"
+{% endtrans %}

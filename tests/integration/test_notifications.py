@@ -15,21 +15,23 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-import json
 import pytest
+import time
 from unittest.mock import MagicMock, patch
 
 from django.core.urlresolvers import reverse
 from django.apps import apps
 from .. import factories as f
 
+from taiga.base.utils import json
 from taiga.projects.notifications import services
+from taiga.projects.notifications import models
 from taiga.projects.notifications.choices import NotifyLevel
 from taiga.projects.history.choices import HistoryType
+from taiga.projects.history.services import take_snapshot
 from taiga.projects.issues.serializers import IssueSerializer
 from taiga.projects.userstories.serializers import UserStorySerializer
 from taiga.projects.tasks.serializers import TaskSerializer
-
 
 pytestmark = pytest.mark.django_db
 
@@ -43,7 +45,7 @@ def mail():
 
 def test_attach_notify_policy_to_project_queryset():
     project1 = f.ProjectFactory.create()
-    project2 = f.ProjectFactory.create()
+    f.ProjectFactory.create()
 
     qs = project1.__class__.objects.order_by("id")
     qs = services.attach_notify_policy_to_project_queryset(project1.owner, qs)
@@ -99,17 +101,33 @@ def test_analize_object_for_watchers():
 
 def test_users_to_notify():
     project = f.ProjectFactory.create()
-    issue = f.IssueFactory.create(project=project)
+    role1 = f.RoleFactory.create(project=project, permissions=['view_issues'])
+    role2 = f.RoleFactory.create(project=project, permissions=[])
 
-    member1 = f.MembershipFactory.create(project=project)
-    member2 = f.MembershipFactory.create(project=project)
-    member3 = f.MembershipFactory.create(project=project)
+    member1 = f.MembershipFactory.create(project=project, role=role1)
+    member2 = f.MembershipFactory.create(project=project, role=role1)
+    member3 = f.MembershipFactory.create(project=project, role=role1)
+    member4 = f.MembershipFactory.create(project=project, role=role1)
+    member5 = f.MembershipFactory.create(project=project, role=role2)
+    inactive_member1 = f.MembershipFactory.create(project=project, role=role1)
+    inactive_member1.user.is_active =  False
+    inactive_member1.user.save()
+    system_member1 = f.MembershipFactory.create(project=project, role=role1)
+    system_member1.user.is_system = True
+    system_member1.user.save()
+
+    issue = f.IssueFactory.create(project=project, owner=member4.user)
 
     policy_model_cls = apps.get_model("notifications", "NotifyPolicy")
 
     policy1 = policy_model_cls.objects.get(user=member1.user)
-    policy2 = policy_model_cls.objects.get(user=member2.user)
-    policy3 = policy_model_cls.objects.get(user=member3.user)
+    policy2 = policy_model_cls.objects.get(user=member3.user)
+    policy3 = policy_model_cls.objects.get(user=inactive_member1.user)
+    policy3.notify_level = NotifyLevel.watch
+    policy3.save()
+    policy4 = policy_model_cls.objects.get(user=system_member1.user)
+    policy4.notify_level = NotifyLevel.watch
+    policy4.save()
 
     history = MagicMock()
     history.owner = member2.user
@@ -118,7 +136,7 @@ def test_users_to_notify():
     # Test basic description modifications
     issue.description = "test1"
     issue.save()
-    users = services.get_users_to_notify(issue, history=history)
+    users = services.get_users_to_notify(issue)
     assert len(users) == 1
     assert tuple(users)[0] == issue.get_owner()
 
@@ -126,112 +144,132 @@ def test_users_to_notify():
     policy1.notify_level = NotifyLevel.watch
     policy1.save()
 
-    users = services.get_users_to_notify(issue, history=history)
+    users = services.get_users_to_notify(issue)
     assert len(users) == 2
     assert users == {member1.user, issue.get_owner()}
 
     # Test with watchers
     issue.watchers.add(member3.user)
-    users = services.get_users_to_notify(issue, history=history)
+    users = services.get_users_to_notify(issue)
     assert len(users) == 3
     assert users == {member1.user, member3.user, issue.get_owner()}
 
     # Test with watchers with ignore policy
-    policy3.notify_level = NotifyLevel.ignore
-    policy3.save()
+    policy2.notify_level = NotifyLevel.ignore
+    policy2.save()
 
     issue.watchers.add(member3.user)
-    users = services.get_users_to_notify(issue, history=history)
+    users = services.get_users_to_notify(issue)
+    assert len(users) == 2
+    assert users == {member1.user, issue.get_owner()}
+
+    # Test with watchers without permissions
+    issue.watchers.add(member5.user)
+    users = services.get_users_to_notify(issue)
+    assert len(users) == 2
+    assert users == {member1.user, issue.get_owner()}
+
+    # Test with inactive user
+    issue.watchers.add(inactive_member1.user)
+    assert len(users) == 2
+    assert users == {member1.user, issue.get_owner()}
+
+    # Test with system user
+    issue.watchers.add(system_member1.user)
     assert len(users) == 2
     assert users == {member1.user, issue.get_owner()}
 
 
-def test_send_notifications_using_services_method(mail):
+def test_send_notifications_using_services_method(settings, mail):
+    settings.CHANGE_NOTIFICATIONS_MIN_INTERVAL = 1
+
     project = f.ProjectFactory.create()
-    member1 = f.MembershipFactory.create(project=project)
-    member2 = f.MembershipFactory.create(project=project)
+    role = f.RoleFactory.create(project=project, permissions=['view_issues', 'view_us', 'view_tasks', 'view_wiki_pages'])
+    member1 = f.MembershipFactory.create(project=project, role=role)
+    member2 = f.MembershipFactory.create(project=project, role=role)
 
     history_change = MagicMock()
-    history_change.owner = member1.user
+    history_change.user = {"pk": member1.user.pk}
     history_change.comment = ""
     history_change.type = HistoryType.change
+    history_change.is_hidden = False
 
     history_create = MagicMock()
-    history_create.owner = member1.user
+    history_create.user = {"pk": member1.user.pk}
     history_create.comment = ""
     history_create.type = HistoryType.create
+    history_create.is_hidden = False
 
     history_delete = MagicMock()
-    history_delete.owner = member1.user
+    history_delete.user = {"pk": member1.user.pk}
     history_delete.comment = ""
     history_delete.type = HistoryType.delete
+    history_delete.is_hidden = False
 
     # Issues
-    issue = f.IssueFactory.create(project=project)
+    issue = f.IssueFactory.create(project=project, owner=member2.user)
+    take_snapshot(issue, user=issue.owner)
     services.send_notifications(issue,
-                                history=history_create,
-                                users={member1.user, member2.user})
+                                history=history_create)
 
     services.send_notifications(issue,
-                                history=history_change,
-                                users={member1.user, member2.user})
+                                history=history_change)
 
     services.send_notifications(issue,
-                                history=history_delete,
-                                users={member1.user, member2.user})
+                                history=history_delete)
 
     # Userstories
-    us = f.UserStoryFactory.create()
+    us = f.UserStoryFactory.create(project=project, owner=member2.user)
+    take_snapshot(us, user=us.owner)
     services.send_notifications(us,
-                                history=history_create,
-                                users={member1.user, member2.user})
+                                history=history_create)
 
     services.send_notifications(us,
-                                history=history_change,
-                                users={member1.user, member2.user})
+                                history=history_change)
 
     services.send_notifications(us,
-                                history=history_delete,
-                                users={member1.user, member2.user})
+                                history=history_delete)
+
     # Tasks
-    task = f.TaskFactory.create()
+    task = f.TaskFactory.create(project=project, owner=member2.user)
+    take_snapshot(task, user=task.owner)
     services.send_notifications(task,
-                                history=history_create,
-                                users={member1.user, member2.user})
+                                history=history_create)
 
     services.send_notifications(task,
-                                history=history_change,
-                                users={member1.user, member2.user})
+                                history=history_change)
 
     services.send_notifications(task,
-                                history=history_delete,
-                                users={member1.user, member2.user})
+                                history=history_delete)
 
     # Wiki pages
-    wiki = f.WikiPageFactory.create()
+    wiki = f.WikiPageFactory.create(project=project, owner=member2.user)
+    take_snapshot(wiki, user=wiki.owner)
     services.send_notifications(wiki,
-                                history=history_create,
-                                users={member1.user, member2.user})
-
-    services.send_notifications(wiki,
-                                history=history_change,
-                                users={member1.user, member2.user})
+                                history=history_create)
 
     services.send_notifications(wiki,
-                                history=history_delete,
-                                users={member1.user, member2.user})
+                                history=history_change)
 
-    assert len(mail.outbox) == 24
+    services.send_notifications(wiki,
+                                history=history_delete)
+
+    assert models.HistoryChangeNotification.objects.count() == 12
+    assert len(mail.outbox) == 0
+    time.sleep(1)
+    services.process_sync_notifications()
+    assert len(mail.outbox) == 12
 
 
+def test_resource_notification_test(client, settings, mail):
+    settings.CHANGE_NOTIFICATIONS_MIN_INTERVAL = 1
 
-def test_resource_notification_test(client, mail):
     user1 = f.UserFactory.create()
     user2 = f.UserFactory.create()
     project = f.ProjectFactory.create(owner=user1)
-    role = f.RoleFactory.create(project=project)
-    member1 = f.MembershipFactory.create(project=project, user=user1, role=role)
-    member2 = f.MembershipFactory.create(project=project, user=user2, role=role)
+    role = f.RoleFactory.create(project=project, permissions=["view_issues"])
+    f.MembershipFactory.create(project=project, user=user1, role=role, is_owner=True)
+    f.MembershipFactory.create(project=project, user=user2, role=role)
     issue = f.IssueFactory.create(owner=user2, project=project)
 
     mock_path = "taiga.projects.issues.api.IssueViewSet.pre_conditions_on_save"
@@ -239,16 +277,26 @@ def test_resource_notification_test(client, mail):
 
     client.login(user1)
 
-    with patch(mock_path) as m:
+    with patch(mock_path):
         data = {"subject": "Fooooo", "version": issue.version}
         response = client.patch(url, json.dumps(data), content_type="application/json")
-        assert len(mail.outbox) == 1
         assert response.status_code == 200
+        assert len(mail.outbox) == 0
+        assert models.HistoryChangeNotification.objects.count() == 1
+        time.sleep(1)
+        services.process_sync_notifications()
+        assert len(mail.outbox) == 1
+        assert models.HistoryChangeNotification.objects.count() == 0
 
-    with patch(mock_path) as m:
+    with patch(mock_path):
         response = client.delete(url)
         assert response.status_code == 204
+        assert len(mail.outbox) == 1
+        assert models.HistoryChangeNotification.objects.count() == 1
+        time.sleep(1)
+        services.process_sync_notifications()
         assert len(mail.outbox) == 2
+        assert models.HistoryChangeNotification.objects.count() == 0
 
 
 def test_watchers_assignation_for_issue(client):
@@ -258,8 +306,8 @@ def test_watchers_assignation_for_issue(client):
     project2 = f.ProjectFactory.create(owner=user2)
     role1 = f.RoleFactory.create(project=project1)
     role2 = f.RoleFactory.create(project=project2)
-    member1 = f.MembershipFactory.create(project=project1, user=user1, role=role1)
-    member2 = f.MembershipFactory.create(project=project2, user=user2, role=role2)
+    f.MembershipFactory.create(project=project1, user=user1, role=role1, is_owner=True)
+    f.MembershipFactory.create(project=project2, user=user2, role=role2)
 
     client.login(user1)
 
@@ -270,7 +318,6 @@ def test_watchers_assignation_for_issue(client):
     url = reverse("issues-detail", args=[issue.pk])
     response = client.json.patch(url, json.dumps(data))
     assert response.status_code == 200, response.content
-
 
     issue = f.create_issue(project=project1, owner=user1)
     data = {"version": issue.version,
@@ -311,8 +358,8 @@ def test_watchers_assignation_for_task(client):
     project2 = f.ProjectFactory.create(owner=user2)
     role1 = f.RoleFactory.create(project=project1)
     role2 = f.RoleFactory.create(project=project2)
-    member1 = f.MembershipFactory.create(project=project1, user=user1, role=role1)
-    member2 = f.MembershipFactory.create(project=project2, user=user2, role=role2)
+    f.MembershipFactory.create(project=project1, user=user1, role=role1, is_owner=True)
+    f.MembershipFactory.create(project=project2, user=user2, role=role2)
 
     client.login(user1)
 
@@ -323,7 +370,6 @@ def test_watchers_assignation_for_task(client):
     url = reverse("tasks-detail", args=[task.pk])
     response = client.json.patch(url, json.dumps(data))
     assert response.status_code == 200, response.content
-
 
     task = f.create_task(project=project1, owner=user1)
     data = {"version": task.version,
@@ -364,8 +410,8 @@ def test_watchers_assignation_for_us(client):
     project2 = f.ProjectFactory.create(owner=user2)
     role1 = f.RoleFactory.create(project=project1)
     role2 = f.RoleFactory.create(project=project2)
-    member1 = f.MembershipFactory.create(project=project1, user=user1, role=role1)
-    member2 = f.MembershipFactory.create(project=project2, user=user2, role=role2)
+    f.MembershipFactory.create(project=project1, user=user1, role=role1, is_owner=True)
+    f.MembershipFactory.create(project=project2, user=user2, role=role2)
 
     client.login(user1)
 
@@ -376,7 +422,6 @@ def test_watchers_assignation_for_us(client):
     url = reverse("userstories-detail", args=[us.pk])
     response = client.json.patch(url, json.dumps(data))
     assert response.status_code == 200
-
 
     us = f.create_userstory(project=project1, owner=user1)
     data = {"version": us.version,
@@ -408,3 +453,14 @@ def test_watchers_assignation_for_us(client):
     url = reverse("userstories-list")
     response = client.json.post(url, json.dumps(data))
     assert response.status_code == 400
+
+
+def test_retrieve_notify_policies_by_anonymous_user(client):
+    project = f.ProjectFactory.create()
+
+    policy = services.get_notify_policy(project, project.owner)
+
+    url = reverse("notifications-detail", args=[policy.pk])
+    response = client.get(url, content_type="application/json")
+    assert response.status_code == 404, response.status_code
+    assert json.loads(response.content.decode("utf-8"))["_error_message"] == "No NotifyPolicy matches the given query.", response.content

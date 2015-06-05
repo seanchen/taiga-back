@@ -14,11 +14,9 @@
 #
 # You should have received a copy of the GNU Affero General Public License
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
-import functools
-import json
 
-from django.conf import settings
 from django.db.models import signals
+from taiga.base.utils import json
 
 
 def signals_switch():
@@ -38,55 +36,6 @@ def signals_switch():
 
 disconnect_signals, reconnect_signals = signals_switch()
 
-
-def set_settings(**new_settings):
-    """Decorator for set django settings that will be only available during the
-    wrapped-function execution.
-
-    For example:
-        @set_settings(FOO='bar')
-        def myfunc():
-            ...
-
-       @set_settings(FOO='bar')
-       class TestCase:
-           ...
-    """
-    def decorator(testcase):
-        if type(testcase) is type:
-            namespace = {"OVERRIDE_SETTINGS": new_settings, "ORIGINAL_SETTINGS": {}}
-            wrapper = type(testcase.__name__, (SettingsTestCase, testcase), namespace)
-        else:
-            @functools.wraps(testcase)
-            def wrapper(*args, **kwargs):
-                old_settings = override_settings(new_settings)
-                try:
-                    testcase(*args, **kwargs)
-                finally:
-                    override_settings(old_settings)
-
-        return wrapper
-
-    return decorator
-
-
-def override_settings(new_settings):
-    old_settings = {}
-    for name, new_value in new_settings.items():
-        old_settings[name] = getattr(settings, name, None)
-        setattr(settings, name, new_value)
-    return old_settings
-
-
-class SettingsTestCase(object):
-    @classmethod
-    def setup_class(cls):
-        cls.ORIGINAL_SETTINGS = override_settings(cls.OVERRIDE_SETTINGS)
-
-    @classmethod
-    def teardown_class(cls):
-        override_settings(cls.ORIGINAL_SETTINGS)
-        cls.OVERRIDE_SETTINGS.clear()
 
 def _helper_test_http_method_responses(client, method, url, data, users, after_each_request=None,
                                        content_type="application/json"):
@@ -110,6 +59,7 @@ def _helper_test_http_method_responses(client, method, url, data, users, after_e
             after_each_request()
     return results
 
+
 def helper_test_http_method(client, method, url, data, users, after_each_request=None,
                             content_type="application/json"):
     responses = _helper_test_http_method_responses(client, method, url, data, users, after_each_request,
@@ -120,6 +70,7 @@ def helper_test_http_method(client, method, url, data, users, after_each_request
 def helper_test_http_method_and_count(client, method, url, data, users, after_each_request=None):
     responses = _helper_test_http_method_responses(client, method, url, data, users, after_each_request)
     return list(map(lambda r: (r.status_code, len(json.loads(r.content.decode('utf-8')))), responses))
+
 
 def helper_test_http_method_and_keys(client, method, url, data, users, after_each_request=None):
     responses = _helper_test_http_method_responses(client, method, url, data, users, after_each_request)

@@ -14,35 +14,65 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-from os import path
 
-from django.utils.translation import ugettext_lazy as _
+from django.utils.translation import ugettext as _
 from django.db.models import Q
 
-from rest_framework import serializers
+from taiga.base.api import serializers
 
-from taiga.base.serializers import JsonField, PgArrayField, ModelSerializer, TagsColorsField
-from taiga.users.models import Role, User
+from taiga.base.fields import JsonField
+from taiga.base.fields import PgArrayField
+from taiga.base.fields import TagsField
+from taiga.base.fields import TagsColorsField
+
 from taiga.users.services import get_photo_or_gravatar_url
 from taiga.users.serializers import UserSerializer
+from taiga.users.serializers import ProjectRoleSerializer
 from taiga.users.validators import RoleExistsValidator
 
-from taiga.permissions.service import get_user_project_permissions, is_project_owner
+from taiga.permissions.service import get_user_project_permissions
+from taiga.permissions.service import is_project_owner
 
 from . import models
-from . validators import ProjectExistsValidator
+from . import services
+from .validators import ProjectExistsValidator
+from .custom_attributes.serializers import UserStoryCustomAttributeSerializer
+from .custom_attributes.serializers import TaskCustomAttributeSerializer
+from .custom_attributes.serializers import IssueCustomAttributeSerializer
 
 
-# User Stories common serializers
+######################################################
+## Custom values for selectors
+######################################################
 
-class PointsSerializer(ModelSerializer):
+class PointsSerializer(serializers.ModelSerializer):
     class Meta:
         model = models.Points
+        i18n_fields = ("name",)
+
+    def validate_name(self, attrs, source):
+        """
+        Check the points name is not duplicated in the project on creation
+        """
+        qs = None
+        # If the user story status exists:
+        if self.object and attrs.get("name", None):
+            qs = models.Points.objects.filter(project=self.object.project, name=attrs[source])
+
+        if not self.object and attrs.get("project", None)  and attrs.get("name", None):
+            qs = models.Points.objects.filter(project=attrs["project"], name=attrs[source])
+
+        if qs and qs.exists():
+              raise serializers.ValidationError(_("Name duplicated for the project"))
+
+        return attrs
 
 
-class UserStoryStatusSerializer(ModelSerializer):
+class UserStoryStatusSerializer(serializers.ModelSerializer):
+
     class Meta:
         model = models.UserStoryStatus
+        i18n_fields = ("name",)
 
     def validate_name(self, attrs, source):
         """
@@ -51,52 +81,114 @@ class UserStoryStatusSerializer(ModelSerializer):
         qs = None
         # If the user story status exists:
         if self.object and attrs.get("name", None):
-            qs = models.UserStoryStatus.objects.filter(project=self.object.project, name=attrs[source])
+            qs = models.UserStoryStatus.objects.filter(project=self.object.project,
+                                                       name=attrs[source])
 
         if not self.object and attrs.get("project", None)  and attrs.get("name", None):
-            qs = models.UserStoryStatus.objects.filter(project=attrs["project"], name=attrs[source])
+            qs = models.UserStoryStatus.objects.filter(project=attrs["project"],
+                                                       name=attrs[source])
 
         if qs and qs.exists():
-              raise serializers.ValidationError("Name duplicated for the project")
+              raise serializers.ValidationError(_("Name duplicated for the project"))
 
         return attrs
 
 
-# Task common serializers
+class BasicUserStoryStatusSerializer(serializers.ModelSerializer):
 
-class TaskStatusSerializer(ModelSerializer):
+    class Meta:
+        model = models.UserStoryStatus
+        fields = ("name", "color")
+
+
+class TaskStatusSerializer(serializers.ModelSerializer):
     class Meta:
         model = models.TaskStatus
+        i18n_fields = ("name",)
+
+    def validate_name(self, attrs, source):
+        """
+        Check the task name is not duplicated in the project on creation
+        """
+        qs = None
+        # If the user story status exists:
+        if self.object and attrs.get("name", None):
+            qs = models.TaskStatus.objects.filter(project=self.object.project, name=attrs[source])
+
+        if not self.object and attrs.get("project", None)  and attrs.get("name", None):
+            qs = models.TaskStatus.objects.filter(project=attrs["project"], name=attrs[source])
+
+        if qs and qs.exists():
+              raise serializers.ValidationError(_("Name duplicated for the project"))
+
+        return attrs
 
 
-# Issues common serializers
+class BasicTaskStatusSerializerSerializer(serializers.ModelSerializer):
 
-class SeveritySerializer(ModelSerializer):
+    class Meta:
+        model = models.TaskStatus
+        fields = ("name", "color")
+
+
+class SeveritySerializer(serializers.ModelSerializer):
     class Meta:
         model = models.Severity
+        i18n_fields = ("name",)
 
 
-class PrioritySerializer(ModelSerializer):
+class PrioritySerializer(serializers.ModelSerializer):
     class Meta:
         model = models.Priority
+        i18n_fields = ("name",)
 
 
-class IssueStatusSerializer(ModelSerializer):
+class IssueStatusSerializer(serializers.ModelSerializer):
     class Meta:
         model = models.IssueStatus
+        i18n_fields = ("name",)
+
+    def validate_name(self, attrs, source):
+        """
+        Check the issue name is not duplicated in the project on creation
+        """
+        qs = None
+        # If the user story status exists:
+        if self.object and attrs.get("name", None):
+            qs = models.IssueStatus.objects.filter(project=self.object.project, name=attrs[source])
+
+        if not self.object and attrs.get("project", None)  and attrs.get("name", None):
+            qs = models.IssueStatus.objects.filter(project=attrs["project"], name=attrs[source])
+
+        if qs and qs.exists():
+              raise serializers.ValidationError(_("Name duplicated for the project"))
+
+        return attrs
 
 
-class IssueTypeSerializer(ModelSerializer):
+class BasicIssueStatusSerializer(serializers.ModelSerializer):
+
+    class Meta:
+        model = models.IssueStatus
+        fields = ("name", "color")
+
+
+class IssueTypeSerializer(serializers.ModelSerializer):
     class Meta:
         model = models.IssueType
+        i18n_fields = ("name",)
 
 
-# Projects
+######################################################
+## Members
+######################################################
 
-class MembershipSerializer(ModelSerializer):
-    role_name = serializers.CharField(source='role.name', required=False, read_only=True)
+class MembershipSerializer(serializers.ModelSerializer):
+    role_name = serializers.CharField(source='role.name', required=False, read_only=True, i18n=True)
     full_name = serializers.CharField(source='user.get_full_name', required=False, read_only=True)
     user_email = serializers.EmailField(source='user.email', required=False, read_only=True)
+    is_user_active = serializers.BooleanField(source='user.is_active', required=False,
+                                              read_only=True)
     email = serializers.EmailField(required=True)
     color = serializers.CharField(source='user.color', required=False, read_only=True)
     photo = serializers.SerializerMethodField("get_photo")
@@ -106,8 +198,10 @@ class MembershipSerializer(ModelSerializer):
 
     class Meta:
         model = models.Membership
+        # IMPORTANT: Maintain the MembershipAdminSerializer Meta up to date
+        # with this info (excluding here user_email and email)
         read_only_fields = ("user",)
-        exclude = ("token",)
+        exclude = ("token", "user_email", "email")
 
     def get_photo(self, project):
         return get_photo_or_gravatar_url(project.user)
@@ -119,7 +213,10 @@ class MembershipSerializer(ModelSerializer):
         return obj.project.slug if obj and obj.project else ""
 
     def validate_email(self, attrs, source):
-        project = attrs["project"]
+        project = attrs.get("project", None)
+        if project is None:
+            project = self.object.project
+
         email = attrs[source]
 
         qs = models.Membership.objects.all()
@@ -137,10 +234,44 @@ class MembershipSerializer(ModelSerializer):
 
         return attrs
 
+    def validate_role(self, attrs, source):
+        project = attrs.get("project", None)
+        if project is None:
+            project = self.object.project
 
-class ProjectMembershipSerializer(ModelSerializer):
-    role_name = serializers.CharField(source='role.name', required=False)
+        role = attrs[source]
+
+        if project.roles.filter(id=role.id).count() == 0:
+            raise serializers.ValidationError(_("Invalid role for the project"))
+
+        return attrs
+
+    def validate_is_owner(self, attrs, source):
+        is_owner = attrs[source]
+        project = attrs.get("project", None)
+        if project is None:
+            project = self.object.project
+
+        if (self.object and
+                not services.project_has_valid_owners(project, exclude_user=self.object.user)):
+            raise serializers.ValidationError(_("At least one of the user must be an active admin"))
+
+        return attrs
+
+
+class MembershipAdminSerializer(MembershipSerializer):
+    class Meta:
+        model = models.Membership
+        # IMPORTANT: Maintain the MembershipSerializer Meta up to date
+        # with this info (excluding there user_email and email)
+        read_only_fields = ("user",)
+        exclude = ("token",)
+
+
+class ProjectMembershipSerializer(serializers.ModelSerializer):
+    role_name = serializers.CharField(source='role.name', required=False, i18n=True)
     full_name = serializers.CharField(source='user.get_full_name', required=False)
+    username = serializers.CharField(source='user.username', required=False)
     color = serializers.CharField(source='user.color', required=False)
     photo = serializers.SerializerMethodField("get_photo")
 
@@ -151,19 +282,36 @@ class ProjectMembershipSerializer(ModelSerializer):
         return get_photo_or_gravatar_url(project.user)
 
 
-class ProjectSerializer(ModelSerializer):
-    tags = PgArrayField(required=False)
+class MemberBulkSerializer(RoleExistsValidator, serializers.Serializer):
+    email = serializers.EmailField()
+    role_id = serializers.IntegerField()
+
+
+class MembersBulkSerializer(ProjectExistsValidator, serializers.Serializer):
+    project_id = serializers.IntegerField()
+    bulk_memberships = MemberBulkSerializer(many=True)
+    invitation_extra_text = serializers.CharField(required=False, max_length=255)
+
+
+######################################################
+## Projects
+######################################################
+
+class ProjectSerializer(serializers.ModelSerializer):
+    tags = TagsField(default=[], required=False)
     anon_permissions = PgArrayField(required=False)
     public_permissions = PgArrayField(required=False)
     stars = serializers.SerializerMethodField("get_stars_number")
     my_permissions = serializers.SerializerMethodField("get_my_permissions")
     i_am_owner = serializers.SerializerMethodField("get_i_am_owner")
     tags_colors = TagsColorsField(required=False)
+    total_closed_milestones = serializers.SerializerMethodField("get_total_closed_milestones")
 
     class Meta:
         model = models.Project
         read_only_fields = ("created_date", "modified_date", "owner")
-        exclude = ("last_us_ref", "last_task_ref", "last_issue_ref")
+        exclude = ("last_us_ref", "last_task_ref", "last_issue_ref",
+                   "issues_csv_uuid", "tasks_csv_uuid", "userstories_csv_uuid")
 
     def get_stars_number(self, obj):
         # The "stars_count" attribute is attached in the get_queryset of the viewset.
@@ -179,6 +327,19 @@ class ProjectSerializer(ModelSerializer):
             return is_project_owner(self.context["request"].user, obj)
         return False
 
+    def get_total_closed_milestones(self, obj):
+        return obj.milestones.filter(closed=True).count()
+
+    def validate_total_milestones(self, attrs, source):
+        """
+        Check that total_milestones is not null, it's an optional parameter but
+        not nullable in the model.
+        """
+        value = attrs[source]
+        if value is None:
+            raise serializers.ValidationError(_("Total milestones must be major or equal to zero"))
+        return attrs
+
 
 class ProjectDetailSerializer(ProjectSerializer):
     roles = serializers.SerializerMethodField("get_roles")
@@ -191,11 +352,19 @@ class ProjectDetailSerializer(ProjectSerializer):
     priorities = PrioritySerializer(many=True, required=False)               # Issues
     severities = SeveritySerializer(many=True, required=False)
 
+    userstory_custom_attributes = UserStoryCustomAttributeSerializer(source="userstorycustomattributes",
+                                                                     many=True, required=False)
+    task_custom_attributes = TaskCustomAttributeSerializer(source="taskcustomattributes",
+                                                           many=True, required=False)
+    issue_custom_attributes = IssueCustomAttributeSerializer(source="issuecustomattributes",
+                                                             many=True, required=False)
+    users = serializers.SerializerMethodField("get_users")
+
     def get_memberships(self, obj):
         qs = obj.memberships.filter(user__isnull=False)
-        qs = qs.order_by('user__full_name', 'user__username')
+        qs = qs.extra(select={"complete_user_name":"concat(full_name, username)"})
+        qs = qs.order_by("complete_user_name")
         qs = qs.select_related("role", "user")
-
         serializer = ProjectMembershipSerializer(qs, many=True)
         return serializer.data
 
@@ -203,26 +372,33 @@ class ProjectDetailSerializer(ProjectSerializer):
         serializer = ProjectRoleSerializer(obj.roles.all(), many=True)
         return serializer.data
 
+    def get_users(self, obj):
+        return UserSerializer(obj.members.all(), many=True).data
 
-class ProjectRoleSerializer(ModelSerializer):
+
+class ProjectDetailAdminSerializer(ProjectDetailSerializer):
     class Meta:
-        model = Role
-        fields = ('id', 'name', 'slug', 'order', 'computable')
+        model = models.Project
+        read_only_fields = ("created_date", "modified_date", "owner")
+        exclude = ("last_us_ref", "last_task_ref", "last_issue_ref")
 
 
-class RoleSerializer(ModelSerializer):
-    members_count = serializers.SerializerMethodField("get_members_count")
-    permissions = PgArrayField(required=False)
+######################################################
+## Starred
+######################################################
 
+class StarredSerializer(serializers.ModelSerializer):
     class Meta:
-        model = Role
-        fields = ('id', 'name', 'permissions', 'computable', 'project', 'order', 'members_count')
-
-    def get_members_count(self, obj):
-        return obj.memberships.count()
+        model = models.Project
+        fields = ['id', 'name', 'slug']
 
 
-class ProjectTemplateSerializer(ModelSerializer):
+
+######################################################
+## Project Templates
+######################################################
+
+class ProjectTemplateSerializer(serializers.ModelSerializer):
     default_options = JsonField(required=False, label=_("Default options"))
     us_statuses = JsonField(required=False, label=_("User story's statuses"))
     points = JsonField(required=False, label=_("Points"))
@@ -235,20 +411,13 @@ class ProjectTemplateSerializer(ModelSerializer):
 
     class Meta:
         model = models.ProjectTemplate
+        read_only_fields = ("created_date", "modified_date")
+        i18n_fields = ("name", "description")
 
+######################################################
+## Project order bulk serializers
+######################################################
 
-class StarredSerializer(ModelSerializer):
-    class Meta:
-        model = models.Project
-        fields = ['id', 'name', 'slug']
-
-
-class MemberBulkSerializer(RoleExistsValidator, serializers.Serializer):
-    email = serializers.EmailField()
-    role_id = serializers.IntegerField()
-
-
-class MembersBulkSerializer(ProjectExistsValidator, serializers.Serializer):
+class UpdateProjectOrderBulkSerializer(ProjectExistsValidator, serializers.Serializer):
     project_id = serializers.IntegerField()
-    bulk_memberships = MemberBulkSerializer(many=True)
-    invitation_extra_text = serializers.CharField(required=False, max_length=255)
+    order = serializers.IntegerField()

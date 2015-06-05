@@ -32,6 +32,7 @@ from django.utils import timezone
 from django.utils.encoding import force_bytes
 from django.template.defaultfilters import slugify
 
+from django_pgjson.fields import JsonField
 from djorm_pgarray.fields import TextArrayField
 
 from taiga.auth.tokens import get_token_for_user
@@ -115,10 +116,12 @@ class User(AbstractBaseUser, PermissionsMixin):
                              max_length=500, null=True, blank=True,
                              verbose_name=_("photo"))
     date_joined = models.DateTimeField(_('date joined'), default=timezone.now)
-    default_language = models.CharField(max_length=20, null=False, blank=True, default="",
-                                        verbose_name=_("default language"))
-    default_timezone = models.CharField(max_length=20, null=False, blank=True, default="",
-                                        verbose_name=_("default timezone"))
+    lang = models.CharField(max_length=20, null=True, blank=True, default="",
+                            verbose_name=_("default language"))
+    theme = models.CharField(max_length=100, null=True, blank=True, default="",
+                            verbose_name=_("default theme"))
+    timezone = models.CharField(max_length=20, null=True, blank=True, default="",
+                                verbose_name=_("default timezone"))
     colorize_tags = models.BooleanField(null=False, blank=True, default=False,
                                         verbose_name=_("colorize tags"))
     token = models.CharField(max_length=200, null=True, blank=True, default=None,
@@ -129,7 +132,7 @@ class User(AbstractBaseUser, PermissionsMixin):
 
     new_email = models.EmailField(_('new email address'), null=True, blank=True)
 
-    github_id = models.IntegerField(null=True, blank=True, verbose_name=_("github ID"))
+    is_system = models.BooleanField(null=False, blank=False, default=False)
 
     USERNAME_FIELD = 'username'
     REQUIRED_FIELDS = ['email']
@@ -165,13 +168,15 @@ class User(AbstractBaseUser, PermissionsMixin):
         self.full_name = "Deleted user"
         self.color = ""
         self.bio = ""
-        self.default_language = ""
-        self.default_timezone = ""
+        self.lang = ""
+        self.theme = ""
+        self.timezone = ""
         self.colorize_tags = True
         self.token = None
-        self.github_id = None
         self.set_unusable_password()
         self.save()
+        self.auth_data.all().delete()
+
 
 class Role(models.Model):
     name = models.CharField(max_length=200, null=False, blank=False,
@@ -208,6 +213,16 @@ class Role(models.Model):
 
     def __str__(self):
         return self.name
+
+
+class AuthData(models.Model):
+    user = models.ForeignKey('users.User', related_name="auth_data")
+    key = models.SlugField(max_length=50)
+    value = models.CharField(max_length=300)
+    extra = JsonField()
+
+    class Meta:
+        unique_together = ["key", "value"]
 
 
 # On Role object is changed, update all membership

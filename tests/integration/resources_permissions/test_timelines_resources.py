@@ -41,9 +41,9 @@ def data():
                                           owner=m.project_owner)
 
     m.public_membership = f.MembershipFactory(project=m.public_project,
-                                          user=m.project_member_with_perms,
-                                          role__project=m.public_project,
-                                          role__permissions=list(map(lambda x: x[0], MEMBERS_PERMISSIONS)))
+                                              user=m.project_member_with_perms,
+                                              role__project=m.public_project,
+                                              role__permissions=list(map(lambda x: x[0], MEMBERS_PERMISSIONS)))
     m.private_membership1 = f.MembershipFactory(project=m.private_project1,
                                                 user=m.project_member_with_perms,
                                                 role__project=m.private_project1,
@@ -61,6 +61,17 @@ def data():
                         role__project=m.private_project2,
                         role__permissions=[])
 
+    f.MembershipFactory(project=m.public_project,
+                        user=m.project_owner,
+                        is_owner=True)
+
+    f.MembershipFactory(project=m.private_project1,
+                        user=m.project_owner,
+                        is_owner=True)
+
+    f.MembershipFactory(project=m.private_project2,
+                        user=m.project_owner,
+                        is_owner=True)
     return m
 
 

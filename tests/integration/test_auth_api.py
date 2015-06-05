@@ -16,18 +16,11 @@
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 import pytest
-from unittest.mock import patch, Mock
 
-from django.apps import apps
 from django.core.urlresolvers import reverse
 from django.core import mail
 
 from .. import factories
-
-from taiga.base.connectors import github
-from taiga.front import resolve as resolve_front_url
-from taiga.users import models
-from taiga.auth.tokens import get_token_for_user
 
 pytestmark = pytest.mark.django_db
 
@@ -89,68 +82,6 @@ def test_response_200_in_public_registration(client, settings):
     assert response.data["full_name"] == "martin seamus mcfly"
     assert len(mail.outbox) == 1
     assert mail.outbox[0].subject == "You've been Taigatized!"
-    user = models.User.objects.get(username="mmcfly")
-    cancel_token = get_token_for_user(user, "cancel_account")
-    cancel_url = resolve_front_url("cancel-account", cancel_token)
-    assert mail.outbox[0].body.index(cancel_url) > 0
-
-def test_response_200_in_registration_with_github_account(client, settings):
-    settings.PUBLIC_REGISTER_ENABLED = False
-    form = {"type": "github",
-            "code": "xxxxxx"}
-
-    with patch("taiga.base.connectors.github.me") as m_me:
-        m_me.return_value = ("mmcfly@bttf.com",
-                             github.User(id=1955,
-                                        username="mmcfly",
-                                        full_name="martin seamus mcfly",
-                                        bio="time traveler"))
-
-        response = client.post(reverse("auth-list"), form)
-        assert response.status_code == 200
-        assert response.data["username"] == "mmcfly"
-        assert response.data["auth_token"] != "" and response.data["auth_token"] != None
-        assert response.data["email"] == "mmcfly@bttf.com"
-        assert response.data["full_name"] == "martin seamus mcfly"
-        assert response.data["bio"] == "time traveler"
-        assert response.data["github_id"] == 1955
-
-
-def test_response_200_in_registration_with_github_account_in_a_project(client, settings):
-    settings.PUBLIC_REGISTER_ENABLED = False
-    membership_model = apps.get_model("projects", "Membership")
-    membership = factories.MembershipFactory(user=None)
-    form = {"type": "github",
-            "code": "xxxxxx",
-            "token": membership.token}
-
-    with patch("taiga.base.connectors.github.me") as m_me:
-        m_me.return_value = ("mmcfly@bttf.com",
-                             github.User(id=1955,
-                                        username="mmcfly",
-                                        full_name="martin seamus mcfly",
-                                        bio="time traveler"))
-
-        response = client.post(reverse("auth-list"), form)
-        assert response.status_code == 200
-        assert membership_model.objects.get(token=form["token"]).user.username == "mmcfly"
-
-
-def test_response_404_in_registration_with_github_in_a_project_with_invalid_token(client, settings):
-    settings.PUBLIC_REGISTER_ENABLED = False
-    form = {"type": "github",
-            "code": "xxxxxx",
-            "token": "123456"}
-
-    with patch("taiga.base.connectors.github.me") as m_me:
-        m_me.return_value = ("mmcfly@bttf.com",
-                             github.User(id=1955,
-                                        username="mmcfly",
-                                        full_name="martin seamus mcfly",
-                                        bio="time traveler"))
-
-        response = client.post(reverse("auth-list"), form)
-        assert response.status_code == 404
 
 
 def test_respond_400_if_username_is_invalid(client, settings, register_form):
@@ -170,7 +101,6 @@ def test_respond_400_if_username_or_email_is_duplicate(client, settings, registe
 
     response = client.post(reverse("auth-register"), register_form)
     assert response.status_code == 201
-
 
     register_form["username"] = "username"
     register_form["email"] = "ff@dd.com"

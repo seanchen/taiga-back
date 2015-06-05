@@ -14,9 +14,13 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
+from django.utils.translation import ugettext as _
 from django.db.models import Q, Count
+from django.apps import apps
 import datetime
 import copy
+
+from taiga.projects.history.models import HistoryEntry
 
 
 def _get_milestones_stats_for_backlog(project):
@@ -35,20 +39,27 @@ def _get_milestones_stats_for_backlog(project):
     future_team_increment = sum(project.future_team_increment.values())
     future_client_increment = sum(project.future_client_increment.values())
 
-    milestones = project.milestones.order_by('estimated_start')
+    milestones = project.milestones.order_by('estimated_start').\
+            prefetch_related("user_stories",
+                             "user_stories__role_points",
+                             "user_stories__role_points__points")
 
+    milestones = list(milestones)
+    milestones_count = len(milestones)
     optimal_points = 0
     team_increment = 0
     client_increment = 0
-    for current_milestone in range(0, max(milestones.count(), project.total_milestones)):
+
+    for current_milestone in range(0, max(milestones_count, project.total_milestones)):
         optimal_points = (project.total_story_points -
                             (optimal_points_per_sprint * current_milestone))
 
         evolution = (project.total_story_points - current_evolution
                         if current_evolution is not None else None)
 
-        if current_milestone < milestones.count():
+        if current_milestone < milestones_count:
             ml = milestones[current_milestone]
+
             milestone_name = ml.name
             team_increment = current_team_increment
             client_increment = current_client_increment
@@ -56,8 +67,9 @@ def _get_milestones_stats_for_backlog(project):
             current_evolution += sum(ml.closed_points.values())
             current_team_increment += sum(ml.team_increment_points.values())
             current_client_increment += sum(ml.client_increment_points.values())
+
         else:
-            milestone_name = "Future sprint"
+            milestone_name = _("Future sprint")
             team_increment = current_team_increment + future_team_increment,
             client_increment = current_client_increment + future_client_increment,
             current_evolution = None
@@ -74,7 +86,7 @@ def _get_milestones_stats_for_backlog(project):
     evolution = (project.total_story_points - current_evolution
                     if current_evolution is not None and project.total_story_points else None)
     yield {
-        'name': 'Project End',
+        'name': _('Project End'),
         'optimal': optimal_points,
         'evolution': evolution,
         'team-increment': team_increment,
@@ -109,8 +121,8 @@ def _count_owned_object(user_obj, counting_storage):
         else:
             counting_storage[0] = {}
             counting_storage[0]['count'] = 1
-            counting_storage[0]['username'] = 'Unassigned'
-            counting_storage[0]['name'] = 'Unassigned'
+            counting_storage[0]['username'] = _('Unassigned')
+            counting_storage[0]['name'] = _('Unassigned')
             counting_storage[0]['id'] = 0
             counting_storage[0]['color'] = 'black'
 
@@ -192,7 +204,13 @@ def get_stats_for_project_issues(project):
 
 
 def get_stats_for_project(project):
-    closed_points = sum(project.closed_points.values())
+    project = apps.get_model("projects", "Project").objects.\
+        prefetch_related("milestones",
+                                     "user_stories").\
+        get(id=project.id)
+
+    points = project.calculated_points
+    closed_points = sum(points["closed"].values())
     closed_milestones = project.milestones.filter(closed=True).count()
     speed = 0
     if closed_milestones != 0:
@@ -203,12 +221,86 @@ def get_stats_for_project(project):
         'total_milestones': project.total_milestones,
         'total_points': project.total_story_points,
         'closed_points': closed_points,
-        'closed_points_per_role': project.closed_points,
-        'defined_points': sum(project.defined_points.values()),
-        'defined_points_per_role': project.defined_points,
-        'assigned_points': sum(project.assigned_points.values()),
-        'assigned_points_per_role': project.assigned_points,
+        'closed_points_per_role': points["closed"],
+        'defined_points': sum(points["defined"].values()),
+        'defined_points_per_role': points["defined"],
+        'assigned_points': sum(points["assigned"].values()),
+        'assigned_points_per_role': points["assigned"],
         'milestones': _get_milestones_stats_for_backlog(project),
         'speed': speed,
     }
     return project_stats
+
+
+def _get_closed_bugs_per_member_stats(project):
+    # Closed bugs per user
+    closed_bugs = project.issues.filter(status__is_closed=True)\
+        .values('assigned_to')\
+        .annotate(count=Count('assigned_to'))\
+        .order_by()
+    closed_bugs = { p["assigned_to"]: p["count"] for p in closed_bugs}
+    return closed_bugs
+
+
+def _get_iocaine_tasks_per_member_stats(project):
+    # Iocaine tasks assigned per user
+    iocaine_tasks = project.tasks.filter(is_iocaine=True)\
+        .values('assigned_to')\
+        .annotate(count=Count('assigned_to'))\
+        .order_by()
+    iocaine_tasks = { t["assigned_to"]: t["count"] for t in iocaine_tasks}
+    return iocaine_tasks
+
+
+def _get_wiki_changes_per_member_stats(project):
+    # Wiki changes
+    wiki_changes = {}
+    wiki_page_keys = ["wiki.wikipage:%s"%id for id in project.wiki_pages.values_list("id", flat=True)]
+    history_entries = HistoryEntry.objects.filter(key__in=wiki_page_keys).values('user')
+    for entry in history_entries:
+        editions = wiki_changes.get(entry["user"]["pk"], 0)
+        wiki_changes[entry["user"]["pk"]] = editions + 1
+
+    return wiki_changes
+
+
+def _get_created_bugs_per_member_stats(project):
+    # Created_bugs
+    created_bugs = project.issues\
+        .values('owner')\
+        .annotate(count=Count('owner'))\
+        .order_by()
+    created_bugs = { p["owner"]: p["count"] for p in created_bugs }
+    return created_bugs
+
+
+def _get_closed_tasks_per_member_stats(project):
+    # Closed tasks
+    closed_tasks = project.tasks.filter(status__is_closed=True)\
+        .values('assigned_to')\
+        .annotate(count=Count('assigned_to'))\
+        .order_by()
+    closed_tasks = {p["assigned_to"]: p["count"] for p in closed_tasks}
+    return closed_tasks
+
+def get_member_stats_for_project(project):
+    base_counters = {id: 0 for id in project.members.values_list("id", flat=True)}
+    closed_bugs = base_counters.copy()
+    closed_bugs.update(_get_closed_bugs_per_member_stats(project))
+    iocaine_tasks = base_counters.copy()
+    iocaine_tasks.update(_get_iocaine_tasks_per_member_stats(project))
+    wiki_changes = base_counters.copy()
+    wiki_changes.update(_get_wiki_changes_per_member_stats(project))
+    created_bugs = base_counters.copy()
+    created_bugs.update(_get_created_bugs_per_member_stats(project))
+    closed_tasks = base_counters.copy()
+    closed_tasks.update(_get_closed_tasks_per_member_stats(project))
+
+    member_stats = {
+        "closed_bugs": closed_bugs,
+        "iocaine_tasks": iocaine_tasks,
+        "wiki_changes": wiki_changes,
+        "created_bugs": created_bugs,
+        "closed_tasks": closed_tasks,
+    }
+    return member_stats

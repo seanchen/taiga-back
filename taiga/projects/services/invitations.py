@@ -1,18 +1,19 @@
 from django.apps import apps
 from django.conf import settings
 
-from djmail.template_mail import MagicMailBuilder
+from djmail.template_mail import MagicMailBuilder, InlineCSSTemplateMail
 
 
 def send_invitation(invitation):
     """Send an invitation email"""
-    mbuilder = MagicMailBuilder()
+    mbuilder = MagicMailBuilder(template_mail_cls=InlineCSSTemplateMail)
     if invitation.user:
         template = mbuilder.membership_notification
+        email = template(invitation.user, {"membership": invitation})
     else:
         template = mbuilder.membership_invitation
+        email = template(invitation.email, {"membership": invitation})
 
-    email = template(invitation.email, {"membership": invitation})
     email.send()
 
 

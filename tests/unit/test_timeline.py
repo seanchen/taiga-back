@@ -15,7 +15,7 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-from unittest.mock import patch, MagicMock, call
+from unittest.mock import patch, call
 
 from django.core.exceptions import ValidationError
 
@@ -41,6 +41,7 @@ def test_push_to_timeline_many_objects():
         with pytest.raises(Exception):
             service.push_to_timeline(None, project, "test")
 
+
 def test_add_to_objects_timeline():
     with patch("taiga.timeline.service._add_to_object_timeline") as mock:
         users = [User(), User(), User()]
@@ -56,13 +57,6 @@ def test_add_to_objects_timeline():
             service.push_to_timeline(None, project, "test")
 
 
-def test_modify_created_timeline_entry():
-    timeline = Timeline()
-    timeline.pk = 3
-    with pytest.raises(ValidationError):
-        timeline.save()
-
-
 def test_get_impl_key_from_model():
     assert service._get_impl_key_from_model(Timeline, "test") == "timeline.timeline.test"
     with pytest.raises(Exception):
@@ -73,12 +67,6 @@ def test_get_impl_key_from_typename():
     assert service._get_impl_key_from_typename("timeline.timeline", "test") == "timeline.timeline.test"
     with pytest.raises(Exception):
         service._get_impl_key(None)
-
-
-def test_get_class_implementation():
-    service._timeline_impl_map["timeline.timeline.test"] = "test"
-    assert service._get_class_implementation(Timeline, "test") == "test"
-    assert service._get_class_implementation(Timeline, "other") == None
 
 
 def test_register_timeline_implementation():

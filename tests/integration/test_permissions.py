@@ -53,9 +53,7 @@ def test_owner_get_user_project_permissions():
     factories.MembershipFactory(user=user1, project=project, role=role)
 
     expected_perms = set(
-        ["test1", "test2"] +
-        [x[0] for x in permissions.OWNERS_PERMISSIONS] +
-        [x[0] for x in permissions.MEMBERS_PERMISSIONS]
+        ["test1", "test2", "view_us"]
     )
     assert service.get_user_project_permissions(user1, project) == expected_perms
 
@@ -70,7 +68,8 @@ def test_owner_member_get_user_project_permissions():
 
     expected_perms = set(
         ["test1", "test2", "test3"] +
-        [x[0] for x in permissions.OWNERS_PERMISSIONS]
+        [x[0] for x in permissions.OWNERS_PERMISSIONS] +
+        [x[0] for x in permissions.MEMBERS_PERMISSIONS]
     )
     assert service.get_user_project_permissions(user1, project) == expected_perms
 
@@ -89,16 +88,16 @@ def test_member_get_user_project_permissions():
 def test_anon_user_has_perm():
     project = factories.ProjectFactory()
     project.anon_permissions = ["test"]
-    assert service.user_has_perm(AnonymousUser(), "test", project) == True
-    assert service.user_has_perm(AnonymousUser(), "fail", project) == False
+    assert service.user_has_perm(AnonymousUser(), "test", project) is True
+    assert service.user_has_perm(AnonymousUser(), "fail", project) is False
 
 
 def test_authenticated_user_has_perm_on_project():
     user1 = factories.UserFactory()
     project = factories.ProjectFactory()
     project.public_permissions = ["test"]
-    assert service.user_has_perm(user1, "test", project) == True
-    assert service.user_has_perm(user1, "fail", project) == False
+    assert service.user_has_perm(user1, "test", project) is True
+    assert service.user_has_perm(user1, "fail", project) is False
 
 
 def test_authenticated_user_has_perm_on_project_related_object():
@@ -107,10 +106,10 @@ def test_authenticated_user_has_perm_on_project_related_object():
     project.public_permissions = ["test"]
     us = factories.UserStoryFactory(project=project)
 
-    assert service.user_has_perm(user1, "test", us) == True
-    assert service.user_has_perm(user1, "fail", us) == False
+    assert service.user_has_perm(user1, "test", us) is True
+    assert service.user_has_perm(user1, "fail", us) is False
 
 
 def test_authenticated_user_has_perm_on_invalid_object():
     user1 = factories.UserFactory()
-    assert service.user_has_perm(user1, "test", user1) == False
+    assert service.user_has_perm(user1, "test", user1) is False

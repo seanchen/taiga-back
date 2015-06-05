@@ -2,6 +2,7 @@ from django.core.urlresolvers import reverse
 
 from taiga.base.utils import json
 from taiga.projects import serializers
+from taiga.users.serializers import RoleSerializer
 from taiga.permissions.permissions import MEMBERS_PERMISSIONS
 
 from tests import factories as f
@@ -35,15 +36,16 @@ def data():
                                           owner=m.project_owner)
 
     m.public_membership = f.MembershipFactory(project=m.public_project,
-                                          user=m.project_member_with_perms,
-                                          email=m.project_member_with_perms.email,
-                                          role__project=m.public_project,
-                                          role__permissions=list(map(lambda x: x[0], MEMBERS_PERMISSIONS)))
+                                              user=m.project_member_with_perms,
+                                              email=m.project_member_with_perms.email,
+                                              role__project=m.public_project,
+                                              role__permissions=list(map(lambda x: x[0], MEMBERS_PERMISSIONS)))
     m.private_membership1 = f.MembershipFactory(project=m.private_project1,
                                                 user=m.project_member_with_perms,
                                                 email=m.project_member_with_perms.email,
                                                 role__project=m.private_project1,
                                                 role__permissions=list(map(lambda x: x[0], MEMBERS_PERMISSIONS)))
+
     f.MembershipFactory(project=m.private_project1,
                         user=m.project_member_without_perms,
                         email=m.project_member_without_perms.email,
@@ -59,6 +61,18 @@ def data():
                         email=m.project_member_without_perms.email,
                         role__project=m.private_project2,
                         role__permissions=[])
+
+    f.MembershipFactory(project=m.public_project,
+                        user=m.project_owner,
+                        is_owner=True)
+
+    f.MembershipFactory(project=m.private_project1,
+                        user=m.project_owner,
+                        is_owner=True)
+
+    f.MembershipFactory(project=m.private_project2,
+                        user=m.project_owner,
+                        is_owner=True)
 
     m.public_points = f.PointsFactory(project=m.public_project)
     m.private_points1 = f.PointsFactory(project=m.private_project1)
@@ -127,19 +141,19 @@ def test_roles_update(client, data):
         data.project_owner
     ]
 
-    role_data = serializers.RoleSerializer(data.public_project.roles.all()[0]).data
+    role_data = RoleSerializer(data.public_project.roles.all()[0]).data
     role_data["name"] = "test"
     role_data = json.dumps(role_data)
     results = helper_test_http_method(client, 'put', public_url, role_data, users)
     assert results == [401, 403, 403, 403, 200]
 
-    role_data = serializers.RoleSerializer(data.private_project1.roles.all()[0]).data
+    role_data = RoleSerializer(data.private_project1.roles.all()[0]).data
     role_data["name"] = "test"
     role_data = json.dumps(role_data)
     results = helper_test_http_method(client, 'put', private1_url, role_data, users)
     assert results == [401, 403, 403, 403, 200]
 
-    role_data = serializers.RoleSerializer(data.private_project2.roles.all()[0]).data
+    role_data = RoleSerializer(data.private_project2.roles.all()[0]).data
     role_data["name"] = "test"
     role_data = json.dumps(role_data)
     results = helper_test_http_method(client, 'put', private2_url, role_data, users)
@@ -361,21 +375,21 @@ def test_points_action_bulk_update_order(client, data):
     ]
 
     post_data = json.dumps({
-        "bulk_points": [(1,2)],
+        "bulk_points": [(1, 2)],
         "project": data.public_project.pk
     })
     results = helper_test_http_method(client, 'post', url, post_data, users)
     assert results == [401, 403, 403, 403, 204]
 
     post_data = json.dumps({
-        "bulk_points": [(1,2)],
+        "bulk_points": [(1, 2)],
         "project": data.private_project1.pk
     })
     results = helper_test_http_method(client, 'post', url, post_data, users)
     assert results == [401, 403, 403, 403, 204]
 
     post_data = json.dumps({
-        "bulk_points": [(1,2)],
+        "bulk_points": [(1, 2)],
         "project": data.private_project2.pk
     })
     results = helper_test_http_method(client, 'post', url, post_data, users)
@@ -522,21 +536,21 @@ def test_user_story_status_action_bulk_update_order(client, data):
     ]
 
     post_data = json.dumps({
-        "bulk_userstory_statuses": [(1,2)],
+        "bulk_userstory_statuses": [(1, 2)],
         "project": data.public_project.pk
     })
     results = helper_test_http_method(client, 'post', url, post_data, users)
     assert results == [401, 403, 403, 403, 204]
 
     post_data = json.dumps({
-        "bulk_userstory_statuses": [(1,2)],
+        "bulk_userstory_statuses": [(1, 2)],
         "project": data.private_project1.pk
     })
     results = helper_test_http_method(client, 'post', url, post_data, users)
     assert results == [401, 403, 403, 403, 204]
 
     post_data = json.dumps({
-        "bulk_userstory_statuses": [(1,2)],
+        "bulk_userstory_statuses": [(1, 2)],
         "project": data.private_project2.pk
     })
     results = helper_test_http_method(client, 'post', url, post_data, users)
@@ -683,21 +697,21 @@ def test_task_status_action_bulk_update_order(client, data):
     ]
 
     post_data = json.dumps({
-        "bulk_task_statuses": [(1,2)],
+        "bulk_task_statuses": [(1, 2)],
         "project": data.public_project.pk
     })
     results = helper_test_http_method(client, 'post', url, post_data, users)
     assert results == [401, 403, 403, 403, 204]
 
     post_data = json.dumps({
-        "bulk_task_statuses": [(1,2)],
+        "bulk_task_statuses": [(1, 2)],
         "project": data.private_project1.pk
     })
     results = helper_test_http_method(client, 'post', url, post_data, users)
     assert results == [401, 403, 403, 403, 204]
 
     post_data = json.dumps({
-        "bulk_task_statuses": [(1,2)],
+        "bulk_task_statuses": [(1, 2)],
         "project": data.private_project2.pk
     })
     results = helper_test_http_method(client, 'post', url, post_data, users)
@@ -844,21 +858,21 @@ def test_issue_status_action_bulk_update_order(client, data):
     ]
 
     post_data = json.dumps({
-        "bulk_issue_statuses": [(1,2)],
+        "bulk_issue_statuses": [(1, 2)],
         "project": data.public_project.pk
     })
     results = helper_test_http_method(client, 'post', url, post_data, users)
     assert results == [401, 403, 403, 403, 204]
 
     post_data = json.dumps({
-        "bulk_issue_statuses": [(1,2)],
+        "bulk_issue_statuses": [(1, 2)],
         "project": data.private_project1.pk
     })
     results = helper_test_http_method(client, 'post', url, post_data, users)
     assert results == [401, 403, 403, 403, 204]
 
     post_data = json.dumps({
-        "bulk_issue_statuses": [(1,2)],
+        "bulk_issue_statuses": [(1, 2)],
         "project": data.private_project2.pk
     })
     results = helper_test_http_method(client, 'post', url, post_data, users)
@@ -1005,21 +1019,21 @@ def test_issue_type_action_bulk_update_order(client, data):
     ]
 
     post_data = json.dumps({
-        "bulk_issue_types": [(1,2)],
+        "bulk_issue_types": [(1, 2)],
         "project": data.public_project.pk
     })
     results = helper_test_http_method(client, 'post', url, post_data, users)
     assert results == [401, 403, 403, 403, 204]
 
     post_data = json.dumps({
-        "bulk_issue_types": [(1,2)],
+        "bulk_issue_types": [(1, 2)],
         "project": data.private_project1.pk
     })
     results = helper_test_http_method(client, 'post', url, post_data, users)
     assert results == [401, 403, 403, 403, 204]
 
     post_data = json.dumps({
-        "bulk_issue_types": [(1,2)],
+        "bulk_issue_types": [(1, 2)],
         "project": data.private_project2.pk
     })
     results = helper_test_http_method(client, 'post', url, post_data, users)
@@ -1166,21 +1180,21 @@ def test_priority_action_bulk_update_order(client, data):
     ]
 
     post_data = json.dumps({
-        "bulk_priorities": [(1,2)],
+        "bulk_priorities": [(1, 2)],
         "project": data.public_project.pk
     })
     results = helper_test_http_method(client, 'post', url, post_data, users)
     assert results == [401, 403, 403, 403, 204]
 
     post_data = json.dumps({
-        "bulk_priorities": [(1,2)],
+        "bulk_priorities": [(1, 2)],
         "project": data.private_project1.pk
     })
     results = helper_test_http_method(client, 'post', url, post_data, users)
     assert results == [401, 403, 403, 403, 204]
 
     post_data = json.dumps({
-        "bulk_priorities": [(1,2)],
+        "bulk_priorities": [(1, 2)],
         "project": data.private_project2.pk
     })
     results = helper_test_http_method(client, 'post', url, post_data, users)
@@ -1327,21 +1341,21 @@ def test_severity_action_bulk_update_order(client, data):
     ]
 
     post_data = json.dumps({
-        "bulk_severities": [(1,2)],
+        "bulk_severities": [(1, 2)],
         "project": data.public_project.pk
     })
     results = helper_test_http_method(client, 'post', url, post_data, users)
     assert results == [401, 403, 403, 403, 204]
 
     post_data = json.dumps({
-        "bulk_severities": [(1,2)],
+        "bulk_severities": [(1, 2)],
         "project": data.private_project1.pk
     })
     results = helper_test_http_method(client, 'post', url, post_data, users)
     assert results == [401, 403, 403, 403, 204]
 
     post_data = json.dumps({
-        "bulk_severities": [(1,2)],
+        "bulk_severities": [(1, 2)],
         "project": data.private_project2.pk
     })
     results = helper_test_http_method(client, 'post', url, post_data, users)
@@ -1427,31 +1441,31 @@ def test_membership_list(client, data):
 
     response = client.get(url)
     projects_data = json.loads(response.content.decode('utf-8'))
-    assert len(projects_data) == 3
+    assert len(projects_data) == 5
     assert response.status_code == 200
 
     client.login(data.registered_user)
     response = client.get(url)
     projects_data = json.loads(response.content.decode('utf-8'))
-    assert len(projects_data) == 3
+    assert len(projects_data) == 5
     assert response.status_code == 200
 
     client.login(data.project_member_without_perms)
     response = client.get(url)
     projects_data = json.loads(response.content.decode('utf-8'))
-    assert len(projects_data) == 3
+    assert len(projects_data) == 5
     assert response.status_code == 200
 
     client.login(data.project_member_with_perms)
     response = client.get(url)
     projects_data = json.loads(response.content.decode('utf-8'))
-    assert len(projects_data) == 5
+    assert len(projects_data) == 8
     assert response.status_code == 200
 
     client.login(data.project_owner)
     response = client.get(url)
     projects_data = json.loads(response.content.decode('utf-8'))
-    assert len(projects_data) == 5
+    assert len(projects_data) == 8
     assert response.status_code == 200
 
 
@@ -1474,6 +1488,7 @@ def test_membership_patch(client, data):
     assert results == [401, 403, 403, 403, 200]
     results = helper_test_http_method(client, 'patch', private2_url, '{"name": "Test"}', users)
     assert results == [401, 403, 403, 403, 200]
+
 
 def test_membership_create(client, data):
     url = reverse('memberships-list')

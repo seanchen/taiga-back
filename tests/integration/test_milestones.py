@@ -16,9 +16,7 @@
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 import pytest
-from unittest.mock import patch, Mock
 
-from django.apps import apps
 from django.core.urlresolvers import reverse
 
 from taiga.base.utils import json
@@ -29,14 +27,14 @@ from .. import factories as f
 
 pytestmark = pytest.mark.django_db
 
+
 def test_update_milestone_with_userstories_list(client):
     user = f.UserFactory.create()
     project = f.ProjectFactory.create(owner=user)
     role = f.RoleFactory.create(project=project)
-    member = f.MembershipFactory.create(project=project, user=user, role=role)
+    f.MembershipFactory.create(project=project, user=user, role=role, is_owner=True)
     sprint = f.MilestoneFactory.create(project=project, owner=user)
-
-    points = f.PointsFactory.create(project=project, value=None)
+    f.PointsFactory.create(project=project, value=None)
     us = f.UserStoryFactory.create(project=project, owner=user)
 
     url = reverse("milestones-detail", args=[sprint.pk])
@@ -49,4 +47,3 @@ def test_update_milestone_with_userstories_list(client):
     client.login(user)
     response = client.json.patch(url, json.dumps(form_data))
     assert response.status_code == 200
-

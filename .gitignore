@@ -5,9 +5,12 @@ settings/local.py
 database.sqlite
 logs
 media
+static
 *.pyc
 *.mo
 .venv
 .coverage
 .cache
 .\#*
+.project
+.env

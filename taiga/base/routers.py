@@ -22,10 +22,10 @@ from django.conf.urls import patterns, url
 from django.core.exceptions import ImproperlyConfigured
 from django.core.urlresolvers import NoReverseMatch
 
-from rest_framework import views
-from rest_framework.response import Response
-from rest_framework.reverse import reverse
-from rest_framework.urlpatterns import format_suffix_patterns
+from taiga.base.api import views
+from taiga.base import response
+from taiga.base.api.reverse import reverse
+from taiga.base.api.urlpatterns import format_suffix_patterns
 
 
 Route = namedtuple('Route', ['url', 'mapping', 'name', 'initkwargs'])
@@ -292,7 +292,7 @@ class DRFDefaultRouter(SimpleRouter):
                     except NoReverseMatch:
                         # Support resources that are prefixed by a parametrized url
                         ret[key] = request.build_absolute_uri() + key
-                return Response(ret)
+                return response.Response(ret)
 
         return APIRoot.as_view()
 

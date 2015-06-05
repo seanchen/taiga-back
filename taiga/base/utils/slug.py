@@ -14,12 +14,18 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-from django.utils import baseconv
-from django.template.defaultfilters import slugify
+from django.template.defaultfilters import slugify as django_slugify
 
 import time
 
 from unidecode import unidecode
+
+
+def slugify(value):
+    """
+    Return a slug
+    """
+    return django_slugify(unidecode(value or ""))
 
 
 def slugify_uniquely(value, model, slugfield="slug"):
@@ -28,13 +34,30 @@ def slugify_uniquely(value, model, slugfield="slug"):
     """
 
     suffix = 0
-    potential = base = slugify(unidecode(value))
+    potential = base = django_slugify(unidecode(value))
     if len(potential) == 0:
         potential = 'null'
     while True:
         if suffix:
             potential = "-".join([base, str(suffix)])
         if not model.objects.filter(**{slugfield: potential}).exists():
+            return potential
+        suffix += 1
+
+
+def slugify_uniquely_for_queryset(value, queryset, slugfield="slug"):
+    """
+    Returns a slug on a name which doesn't exist in a queryset
+    """
+
+    suffix = 0
+    potential = base = django_slugify(unidecode(value))
+    if len(potential) == 0:
+        potential = 'null'
+    while True:
+        if suffix:
+            potential = "-".join([base, str(suffix)])
+        if not queryset.filter(**{slugfield: potential}).exists():
             return potential
         suffix += 1
 

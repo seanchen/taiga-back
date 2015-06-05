@@ -43,7 +43,7 @@ def test_proccessor_valid_us_reference():
         instance.content_type.model = "userstory"
         instance.content_object.subject = "test"
         result = render(dummy_project, "**#1**")
-        expected_result = '<p><strong><a alt="test" class="reference user-story" href="http://localhost:9001/project/test/us/1" title="test">&num;1</a></strong></p>'
+        expected_result = '<p><strong><a class="reference user-story" href="http://localhost:9001/project/test/us/1" title="#1 test">#1</a></strong></p>'
         assert result == expected_result
 
 
@@ -53,7 +53,7 @@ def test_proccessor_valid_issue_reference():
         instance.content_type.model = "issue"
         instance.content_object.subject = "test"
         result = render(dummy_project, "**#2**")
-        expected_result = '<p><strong><a alt="test" class="reference issue" href="http://localhost:9001/project/test/issue/2" title="test">&num;2</a></strong></p>'
+        expected_result = '<p><strong><a class="reference issue" href="http://localhost:9001/project/test/issue/2" title="#2 test">#2</a></strong></p>'
         assert result == expected_result
 
 
@@ -63,7 +63,7 @@ def test_proccessor_valid_task_reference():
         instance.content_type.model = "task"
         instance.content_object.subject = "test"
         result = render(dummy_project, "**#3**")
-        expected_result = '<p><strong><a alt="test" class="reference task" href="http://localhost:9001/project/test/task/3" title="test">&num;3</a></strong></p>'
+        expected_result = '<p><strong><a class="reference task" href="http://localhost:9001/project/test/task/3" title="#3 test">#3</a></strong></p>'
         assert result == expected_result
 
 
@@ -97,63 +97,80 @@ def test_render_wiki_strike():
     assert render(dummy_project, "~~test~~") == "<p><del>test</del></p>"
 
 
-def test_render_absolute_link():
-    assert render(dummy_project, "[test](/test)") == "<p><a href=\"/test\">test</a></p>"
-
-
-def test_render_relative_link():
-    assert render(dummy_project, "[test](test)") == "<p><a href=\"test\">test</a></p>"
-
-
 def test_render_wikilink():
-    expected_result = "<p><a class=\"wikilink\" href=\"/project/test/wiki/test\">test</a></p>"
+    expected_result = "<p><a class=\"reference wiki\" href=\"http://localhost:9001/project/test/wiki/test\" title=\"test\">test</a></p>"
     assert render(dummy_project, "[[test]]") == expected_result
 
 
+def test_render_wikilink_1():
+    expected_result = "<p><a class=\"reference wiki\" href=\"http://localhost:9001/project/test/wiki/test\" title=\"test\">test</a></p>"
+    assert render(dummy_project, "[[test]]") == expected_result
+
+
+def test_render_wikilink_2():
+    expected_result = "<p><a class=\"reference wiki\" href=\"http://localhost:9001/project/test/wiki/test-page\" title=\"test page\">test page</a></p>"
+    assert render(dummy_project, "[[test page]]") == expected_result
+
+
+def test_render_wikilink_3():
+    expected_result = "<p><a class=\"reference wiki\" href=\"http://localhost:9001/project/test/wiki/testpage\" title=\"TestPage\">TestPage</a></p>"
+    assert render(dummy_project, "[[TestPage]]") == expected_result
+
+
 def test_render_wikilink_with_custom_title():
-    expected_result = "<p><a class=\"wikilink\" href=\"/project/test/wiki/test\">custom</a></p>"
+    expected_result = "<p><a class=\"reference wiki\" href=\"http://localhost:9001/project/test/wiki/test\" title=\"custom\">custom</a></p>"
     assert render(dummy_project, "[[test|custom]]") == expected_result
 
 
+def test_render_wikilink_slug_to_wikipages():
+    expected_result = "<p><a class=\"reference wiki\" href=\"http://localhost:9001/project/test/wiki/wiki_page\" title=\"wiki page\">wiki</a></p>"
+    assert render(dummy_project, "[wiki](wiki_page \"wiki page\")") == expected_result
+
+
+def test_render_wikilink_relative_to_absolute():
+    expected_result = "<p><a href=\"http://localhost:9001/project/test/\">test project</a></p>"
+    assert render(dummy_project, "[test project](/project/test/)") == expected_result
+
+
 def test_render_reference_links():
-    expected_result = "<p>An <a href=\"http://example.com/\" title=\"Title\">example</a> of reference link</p>"
+    expected_result = "<p>An <a href=\"http://example.com/\" target=\"_blank\" title=\"Title\">example</a> of reference link</p>"
     source = "An [example][id] of reference link\n  [id]: http://example.com/  \"Title\""
     assert render(dummy_project, source) == expected_result
 
 
 def test_render_url_autolinks():
-    expected_result = "<p>Test the <a href=\"http://example.com/\">http://example.com/</a> autolink</p>"
+    expected_result = "<p>Test the <a href=\"http://example.com/\" target=\"_blank\">http://example.com/</a> autolink</p>"
     source = "Test the http://example.com/ autolink"
     assert render(dummy_project, source) == expected_result
 
 
 def test_render_url_autolinks_without_http():
-    expected_result = "<p>Test the <a href=\"http://www.example.com\">www.example.com</a> autolink</p>"
+    expected_result = "<p>Test the <a href=\"http://www.example.com\" target=\"_blank\">www.example.com</a> autolink</p>"
     source = "Test the www.example.com autolink"
     assert render(dummy_project, source) == expected_result
 
 
 def test_render_url_automail():
-    expected_result = "<p>Test the <a href=\"mailto:example@example.com\">example@example.com</a> automail</p>"
+    expected_result = "<p>Test the <a href=\"mailto:example@example.com\" target=\"_blank\">example@example.com</a> automail</p>"
     source = "Test the example@example.com automail"
     assert render(dummy_project, source) == expected_result
 
 
 def test_render_absolute_image():
-    assert render(dummy_project, "![test](/test.png)") == "<p><img alt=\"test\" src=\"/test.png\" /></p>"
+    assert render(dummy_project, "![test](/test.png)") == "<p><img alt=\"test\" src=\"/test.png\"></p>"
 
 
 def test_render_relative_image():
-    assert render(dummy_project, "![test](test.png)") == "<p><img alt=\"test\" src=\"test.png\" /></p>"
+    assert render(dummy_project, "![test](test.png)") == "<p><img alt=\"test\" src=\"test.png\"></p>"
 
 
 def test_render_triple_quote_code():
-    expected_result = "<div class=\"codehilite\"><pre><span class=\"n\">print</span><span class=\"p\">(</span><span class=\"s\">&quot;test&quot;</span><span class=\"p\">)</span>\n</pre></div>"
+    expected_result = "<div class=\"codehilite\"><pre><span class=\"n\">print</span><span class=\"p\">(</span><span class=\"s\">\"test\"</span><span class=\"p\">)</span>\n</pre></div>"
     assert render(dummy_project, "```\nprint(\"test\")\n```") == expected_result
 
 
 def test_render_triple_quote_and_lang_code():
-    expected_result = "<div class=\"codehilite\"><pre><span class=\"k\">print</span><span class=\"p\">(</span><span class=\"s\">&quot;test&quot;</span><span class=\"p\">)</span>\n</pre></div>"
+    expected_result = "<div class=\"codehilite\"><pre><span class=\"k\">print</span><span class=\"p\">(</span><span class=\"s\">\"test\"</span><span class=\"p\">)</span>\n</pre></div>"
     assert render(dummy_project, "```python\nprint(\"test\")\n```") == expected_result
 
 

@@ -32,18 +32,18 @@ selfcontained tokens. This trust tokes from external
 fraudulent modifications.
 """
 
-import base64
 import re
 
 from django.conf import settings
-from rest_framework.authentication import BaseAuthentication
+from taiga.base.api.authentication import BaseAuthentication
 
 from .tokens import get_user_for_token
+
 
 class Session(BaseAuthentication):
     """
     Session based authentication like the standard
-    `rest_framework.authentication.SessionAuthentication`
+    `taiga.base.api.authentication.SessionAuthentication`
     but with csrf disabled (for obvious reasons because
     it is for api.
 
@@ -82,8 +82,8 @@ class Token(BaseAuthentication):
         token = token_rx_match.group(1)
         max_age_auth_token = getattr(settings, "MAX_AGE_AUTH_TOKEN", None)
         user = get_user_for_token(token, "authentication",
-            max_age=max_age_auth_token)
-            
+                                  max_age=max_age_auth_token)
+
         return (user, token)
 
     def authenticate_header(self, request):

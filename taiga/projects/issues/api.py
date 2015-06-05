@@ -14,23 +14,20 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-from django.utils.translation import ugettext_lazy as _
-from django.shortcuts import get_object_or_404
+from django.utils.translation import ugettext as _
 from django.db.models import Q
-from django.http import Http404
+from django.http import Http404, HttpResponse
 
-from rest_framework.response import Response
-from rest_framework import status
-
-from taiga.base import filters, response
+from taiga.base import filters
 from taiga.base import exceptions as exc
+from taiga.base import response
 from taiga.base.decorators import detail_route, list_route
 from taiga.base.api import ModelCrudViewSet, ModelListViewSet
-from taiga.base import tags
+from taiga.base.api.utils import get_object_or_404
 
 from taiga.users.models import User
 
-from taiga.projects.notifications import WatchedResourceMixin
+from taiga.projects.notifications.mixins import WatchedResourceMixin
 from taiga.projects.occ import OCCResourceMixin
 from taiga.projects.history.mixins import HistoryResourceMixin
 
@@ -79,7 +76,7 @@ class IssuesFilter(filters.FilterBackend):
         filterdata = self._prepare_filters_data(request)
 
         if "tags" in filterdata:
-            queryset = tags.filter(queryset, contains=filterdata["tags"])
+            queryset = queryset.filter(tags__contains=filterdata["tags"])
 
         for name, value in filter(lambda x: x[0] != "tags", filterdata.items()):
             if None in value:
@@ -113,7 +110,7 @@ class IssueViewSet(OCCResourceMixin, HistoryResourceMixin, WatchedResourceMixin,
                        IssuesFilter, IssuesOrdering,)
     retrieve_exclude_filters = (IssuesFilter,)
 
-    filter_fields = ("project",)
+    filter_fields = ("project", "status__is_closed", "watchers")
     order_by_fields = ("type",
                        "severity",
                        "status",
@@ -139,19 +136,44 @@ class IssueViewSet(OCCResourceMixin, HistoryResourceMixin, WatchedResourceMixin,
         super().pre_conditions_on_save(obj)
 
         if obj.milestone and obj.milestone.project != obj.project:
-            raise exc.PermissionDenied(_("You don't have permissions to set this milestone to this issue."))
+            raise exc.PermissionDenied(_("You don't have permissions to set this sprint "
+                                         "to this issue."))
 
         if obj.status and obj.status.project != obj.project:
-            raise exc.PermissionDenied(_("You don't have permissions to set this status to this issue."))
+            raise exc.PermissionDenied(_("You don't have permissions to set this status "
+                                         "to this issue."))
 
         if obj.severity and obj.severity.project != obj.project:
-            raise exc.PermissionDenied(_("You don't have permissions to set this severity to this issue."))
+            raise exc.PermissionDenied(_("You don't have permissions to set this severity "
+                                         "to this issue."))
 
         if obj.priority and obj.priority.project != obj.project:
-            raise exc.PermissionDenied(_("You don't have permissions to set this priority to this issue."))
+            raise exc.PermissionDenied(_("You don't have permissions to set this priority "
+                                         "to this issue."))
 
         if obj.type and obj.type.project != obj.project:
-            raise exc.PermissionDenied(_("You don't have permissions to set this type to this issue."))
+            raise exc.PermissionDenied(_("You don't have permissions to set this type "
+                                         "to this issue."))
+
+    @list_route(methods=["GET"])
+    def by_ref(self, request):
+        ref = request.QUERY_PARAMS.get("ref", None)
+        project_id = request.QUERY_PARAMS.get("project", None)
+        issue = get_object_or_404(models.Issue, ref=ref, project_id=project_id)
+        return self.retrieve(request, pk=issue.pk)
+
+    @list_route(methods=["GET"])
+    def csv(self, request):
+        uuid = request.QUERY_PARAMS.get("uuid", None)
+        if uuid is None:
+            return response.NotFound()
+
+        project = get_object_or_404(Project, issues_csv_uuid=uuid)
+        queryset = project.issues.all().order_by('ref')
+        data = services.issues_to_csv(project, queryset)
+        csv_response = HttpResponse(data.getvalue(), content_type='application/csv; charset=utf-8')
+        csv_response['Content-Disposition'] = 'attachment; filename="issues.csv"'
+        return csv_response
 
     @list_route(methods=["POST"])
     def bulk_create(self, request, **kwargs):
@@ -178,7 +200,7 @@ class IssueViewSet(OCCResourceMixin, HistoryResourceMixin, WatchedResourceMixin,
         self.check_permissions(request, 'upvote', issue)
 
         votes_service.add_vote(issue, user=request.user)
-        return Response(status=status.HTTP_200_OK)
+        return response.Ok()
 
     @detail_route(methods=['post'])
     def downvote(self, request, pk=None):
@@ -187,7 +209,7 @@ class IssueViewSet(OCCResourceMixin, HistoryResourceMixin, WatchedResourceMixin,
         self.check_permissions(request, 'downvote', issue)
 
         votes_service.remove_vote(issue, user=request.user)
-        return Response(status=status.HTTP_200_OK)
+        return response.Ok()
 
 
 class VotersViewSet(ModelListViewSet):
@@ -208,7 +230,7 @@ class VotersViewSet(ModelListViewSet):
             raise Http404
 
         serializer = self.get_serializer(self.object)
-        return Response(serializer.data)
+        return response.Ok(serializer.data)
 
     def list(self, request, *args, **kwargs):
         issue_id = kwargs.get("issue_id", None)

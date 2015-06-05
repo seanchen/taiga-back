@@ -14,15 +14,17 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-from django.utils.translation import ugettext_lazy as _
+from django.utils.translation import ugettext as _
 
+from taiga.base.api.utils import get_object_or_404
 from taiga.base import filters, response
 from taiga.base import exceptions as exc
 from taiga.base.decorators import list_route
 from taiga.base.api import ModelCrudViewSet
 from taiga.projects.models import Project
+from django.http import HttpResponse
 
-from taiga.projects.notifications import WatchedResourceMixin
+from taiga.projects.notifications.mixins import WatchedResourceMixin
 from taiga.projects.history.mixins import HistoryResourceMixin
 from taiga.projects.occ import OCCResourceMixin
 
@@ -39,7 +41,8 @@ class TaskViewSet(OCCResourceMixin, HistoryResourceMixin, WatchedResourceMixin, 
     list_serializer_class = serializers.TaskSerializer
     permission_classes = (permissions.TaskPermission,)
     filter_backends = (filters.CanViewTasksFilterBackend,)
-    filter_fields = ["user_story", "milestone", "project"]
+    filter_fields = ["user_story", "milestone", "project", "assigned_to",
+        "status__is_closed", "watchers"]
 
     def pre_save(self, obj):
         if obj.user_story:
@@ -63,6 +66,26 @@ class TaskViewSet(OCCResourceMixin, HistoryResourceMixin, WatchedResourceMixin, 
         if obj.milestone and obj.user_story and obj.milestone != obj.user_story.milestone:
             raise exc.WrongArguments(_("You don't have permissions for add/modify this task."))
 
+    @list_route(methods=["GET"])
+    def by_ref(self, request):
+        ref = request.QUERY_PARAMS.get("ref", None)
+        project_id = request.QUERY_PARAMS.get("project", None)
+        task = get_object_or_404(models.Task, ref=ref, project_id=project_id)
+        return self.retrieve(request, pk=task.pk)
+
+    @list_route(methods=["GET"])
+    def csv(self, request):
+        uuid = request.QUERY_PARAMS.get("uuid", None)
+        if uuid is None:
+            return response.NotFound()
+
+        project = get_object_or_404(Project, tasks_csv_uuid=uuid)
+        queryset = project.tasks.all().order_by('ref')
+        data = services.tasks_to_csv(project, queryset)
+        csv_response = HttpResponse(data.getvalue(), content_type='application/csv; charset=utf-8')
+        csv_response['Content-Disposition'] = 'attachment; filename="tasks.csv"'
+        return csv_response
+
     @list_route(methods=["POST"])
     def bulk_create(self, request, **kwargs):
         serializer = serializers.TasksBulkSerializer(data=request.DATA)
@@ -79,3 +102,27 @@ class TaskViewSet(OCCResourceMixin, HistoryResourceMixin, WatchedResourceMixin, 
             return response.Ok(tasks_serialized.data)
 
         return response.BadRequest(serializer.errors)
+
+    def _bulk_update_order(self, order_field, request, **kwargs):
+        serializer = serializers.UpdateTasksOrderBulkSerializer(data=request.DATA)
+        if not serializer.is_valid():
+            return response.BadRequest(serializer.errors)
+
+        data = serializer.data
+        project = get_object_or_404(Project, pk=data["project_id"])
+
+        self.check_permissions(request, "bulk_update_order", project)
+        services.update_tasks_order_in_bulk(data["bulk_tasks"],
+                                            project=project,
+                                            field=order_field)
+        services.snapshot_tasks_in_bulk(data["bulk_tasks"], request.user)
+
+        return response.NoContent()
+
+    @list_route(methods=["POST"])
+    def bulk_update_taskboard_order(self, request, **kwargs):
+        return self._bulk_update_order("taskboard_order", request, **kwargs)
+
+    @list_route(methods=["POST"])
+    def bulk_update_us_order(self, request, **kwargs):
+        return self._bulk_update_order("us_order", request, **kwargs)

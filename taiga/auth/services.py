@@ -24,19 +24,31 @@ not uses clasess and uses simple functions.
 """
 
 from django.apps import apps
-from django.db.models import Q
 from django.db import transaction as tx
 from django.db import IntegrityError
 from django.utils.translation import ugettext as _
 
-from djmail.template_mail import MagicMailBuilder
+from djmail.template_mail import MagicMailBuilder, InlineCSSTemplateMail
 
 from taiga.base import exceptions as exc
-from taiga.users.serializers import UserSerializer
+from taiga.users.serializers import UserAdminSerializer
 from taiga.users.services import get_and_validate_user
 
 from .tokens import get_token_for_user
 from .signals import user_registered as user_registered_signal
+
+auth_plugins = {}
+
+
+def register_auth_plugin(name, login_func):
+    auth_plugins[name] = {
+        "login_func": login_func,
+    }
+
+
+def get_auth_plugins():
+    return auth_plugins
+
 
 def send_register_email(user) -> bool:
     """
@@ -45,12 +57,12 @@ def send_register_email(user) -> bool:
     """
     cancel_token = get_token_for_user(user, "cancel_account")
     context = {"user": user, "cancel_token": cancel_token}
-    mbuilder = MagicMailBuilder()
-    email = mbuilder.registered_user(user.email, context)
+    mbuilder = MagicMailBuilder(template_mail_cls=InlineCSSTemplateMail)
+    email = mbuilder.registered_user(user, context)
     return bool(email.send())
 
 
-def is_user_already_registered(*, username:str, email:str, github_id:int=None) -> (bool, str):
+def is_user_already_registered(*, username:str, email:str) -> (bool, str):
     """
     Checks if a specified user is already registred.
 
@@ -64,9 +76,6 @@ def is_user_already_registered(*, username:str, email:str, github_id:int=None) -
 
     if user_model.objects.filter(email=email):
         return (True, _("Email is already in use."))
-
-    if github_id and user_model.objects.filter(github_id=github_id):
-        return (True, _("Github id is already in use"))
 
     return (False, None)
 
@@ -82,7 +91,7 @@ def get_membership_by_token(token:str):
     membership_model = apps.get_model("projects", "Membership")
     qs = membership_model.objects.filter(token=token)
     if len(qs) == 0:
-        raise exc.NotFound("Token not matches any valid invitation.")
+        raise exc.NotFound(_("Token not matches any valid invitation."))
     return qs[0]
 
 
@@ -110,7 +119,7 @@ def public_register(username:str, password:str, email:str, full_name:str):
     try:
         user.save()
     except IntegrityError:
-        raise exc.WrongArguments("User is already register.")
+        raise exc.WrongArguments(_("User is already registered."))
 
     send_register_email(user)
     user_registered_signal.send(sender=user.__class__, user=user)
@@ -134,7 +143,7 @@ def private_register_for_existing_user(token:str, username:str, password:str):
         membership.user = user
         membership.save(update_fields=["user"])
     except IntegrityError:
-        raise exc.IntegrityError("Membership with user is already exists.")
+        raise exc.IntegrityError(_("Membership with user is already exists."))
 
     send_register_email(user)
     return user
@@ -171,41 +180,25 @@ def private_register_for_new_user(token:str, username:str, email:str,
     return user
 
 
-@tx.atomic
-def github_register(username:str, email:str, full_name:str, github_id:int, bio:str, token:str=None):
-    """
-    Register a new user from github.
-
-    This can raise `exc.IntegrityError` exceptions in
-    case of conflics found.
-
-    :returns: User
-    """
-    user_model = apps.get_model("users", "User")
-    user, created = user_model.objects.get_or_create(github_id=github_id,
-                                                     defaults={"username": username,
-                                                               "email": email,
-                                                               "full_name": full_name,
-                                                               "bio": bio})
-    if token:
-        membership = get_membership_by_token(token)
-        membership.user = user
-        membership.save(update_fields=["user"])
-
-    if created:
-        send_register_email(user)
-        user_registered_signal.send(sender=user.__class__, user=user)
-
-    return user
-
-
 def make_auth_response_data(user) -> dict:
     """
     Given a domain and user, creates data structure
     using python dict containing a representation
     of the logged user.
     """
-    serializer = UserSerializer(user)
+    serializer = UserAdminSerializer(user)
     data = dict(serializer.data)
     data["auth_token"] = get_token_for_user(user, "authentication")
     return data
+
+
+def normal_login_func(request):
+    username = request.DATA.get('username', None)
+    password = request.DATA.get('password', None)
+
+    user = get_and_validate_user(username=username, password=password)
+    data = make_auth_response_data(user)
+    return data
+
+
+register_auth_plugin("normal", normal_login_func)

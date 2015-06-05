@@ -1,15 +1,10 @@
-{% set final_url = resolve_front_url("wiki", object.project.slug, object.slug) %}
-{% set final_url_name = "Taiga - View Wiki Page '{0}'".format(object.slug) %}
+{% extends "emails/updates-body-text.jinja" %}
+{% block head %}
+{% trans user=user.get_full_name()|safe, changer=changer.get_full_name()|safe, project=project.name|safe, page=snapshot.slug, url=resolve_front_url("wiki", project.slug, snapshot.slug) %}
+Wiki Page updated
 
-- Project: {{ object.project.name }}
-- Wiki Page: {{ object.slug }}
-- Updated by {{ changer.get_full_name() }}
-{% if comment %}
-Comment: {{ comment|linebreaksbr }}
-{% endif %}
-{% if changed_fields %}
-- Updated fields:
-    {% include "emails/includes/fields_diff-text.jinja" %}
-{% endif %}
+Hello {{ user }}, {{ changer }} has updated a wiki page on {{ project }}
 
-** More info at {{ final_url_name }} ({{ final_url }}) **
+See wiki page {{ page }} at {{ url }}
+{% endtrans %}
+{% endblock %}

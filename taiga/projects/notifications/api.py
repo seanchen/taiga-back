@@ -14,21 +14,12 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-from django.utils.translation import ugettext_lazy as _
-from django.shortcuts import get_object_or_404
 from django.db.models import Q
 
-from rest_framework.permissions import IsAuthenticated
-from rest_framework.response import Response
-
-from taiga.base import filters
-from taiga.base import exceptions as exc
-from taiga.base.decorators import detail_route
 from taiga.base.api import ModelCrudViewSet
 
-from taiga.projects.models import Project
-
 from taiga.projects.notifications.choices import NotifyLevel
+from taiga.projects.models import Project
 
 from . import serializers
 from . import models
@@ -45,11 +36,14 @@ class NotifyPolicyViewSet(ModelCrudViewSet):
             Q(owner=self.request.user) |
             Q(memberships__user=self.request.user)
         ).distinct()
+
         for project in projects:
             services.create_notify_policy_if_not_exists(project, self.request.user, NotifyLevel.watch)
 
     def get_queryset(self):
-        self._build_needed_notify_policies()
+        if self.request.user.is_anonymous():
+            return models.NotifyPolicy.objects.none()
 
+        self._build_needed_notify_policies()
         qs = models.NotifyPolicy.objects.filter(user=self.request.user)
         return qs.distinct()

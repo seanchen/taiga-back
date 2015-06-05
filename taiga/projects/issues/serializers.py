@@ -14,24 +14,32 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-from rest_framework import serializers
+from taiga.base.api import serializers
+from taiga.base.fields import TagsField
+from taiga.base.fields import PgArrayField
+from taiga.base.neighbors import NeighborsSerializerMixin
 
-from taiga.base.serializers import Serializer, PickleField, NeighborsSerializerMixin
+
 from taiga.mdrender.service import render as mdrender
 from taiga.projects.validators import ProjectExistsValidator
 from taiga.projects.notifications.validators import WatchersValidator
+from taiga.projects.serializers import BasicIssueStatusSerializer
+from taiga.users.serializers import BasicInfoSerializer as UserBasicInfoSerializer
 
 from . import models
 
 
 class IssueSerializer(WatchersValidator, serializers.ModelSerializer):
-    tags = PickleField(required=False)
+    tags = TagsField(required=False)
+    external_reference = PgArrayField(required=False)
     is_closed = serializers.Field(source="is_closed")
     comment = serializers.SerializerMethodField("get_comment")
     generated_user_stories = serializers.SerializerMethodField("get_generated_user_stories")
     blocked_note_html = serializers.SerializerMethodField("get_blocked_note_html")
     description_html = serializers.SerializerMethodField("get_description_html")
     votes = serializers.SerializerMethodField("get_votes_number")
+    status_extra_info = BasicIssueStatusSerializer(source="status", required=False, read_only=True)
+    assigned_to_extra_info = UserBasicInfoSerializer(source="assigned_to", required=False, read_only=True)
 
     class Meta:
         model = models.Issue
@@ -67,6 +75,6 @@ class NeighborIssueSerializer(serializers.ModelSerializer):
         depth = 0
 
 
-class IssuesBulkSerializer(ProjectExistsValidator, Serializer):
+class IssuesBulkSerializer(ProjectExistsValidator, serializers.Serializer):
     project_id = serializers.IntegerField()
     bulk_issues = serializers.CharField()

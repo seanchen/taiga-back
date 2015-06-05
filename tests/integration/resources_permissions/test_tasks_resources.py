@@ -1,11 +1,16 @@
+import uuid
+
 from django.core.urlresolvers import reverse
 
 from taiga.base.utils import json
 from taiga.projects.tasks.serializers import TaskSerializer
 from taiga.permissions.permissions import MEMBERS_PERMISSIONS, ANON_PERMISSIONS, USER_PERMISSIONS
+from taiga.projects.occ import OCCResourceMixin
 
 from tests import factories as f
 from tests.utils import helper_test_http_method, disconnect_signals, reconnect_signals
+
+from unittest import mock
 
 import pytest
 pytestmark = pytest.mark.django_db
@@ -32,20 +37,23 @@ def data():
     m.public_project = f.ProjectFactory(is_private=False,
                                         anon_permissions=list(map(lambda x: x[0], ANON_PERMISSIONS)),
                                         public_permissions=list(map(lambda x: x[0], USER_PERMISSIONS)),
-                                        owner=m.project_owner)
+                                        owner=m.project_owner,
+                                        tasks_csv_uuid=uuid.uuid4().hex)
     m.private_project1 = f.ProjectFactory(is_private=True,
                                           anon_permissions=list(map(lambda x: x[0], ANON_PERMISSIONS)),
                                           public_permissions=list(map(lambda x: x[0], USER_PERMISSIONS)),
-                                          owner=m.project_owner)
+                                          owner=m.project_owner,
+                                          tasks_csv_uuid=uuid.uuid4().hex)
     m.private_project2 = f.ProjectFactory(is_private=True,
                                           anon_permissions=[],
                                           public_permissions=[],
-                                          owner=m.project_owner)
+                                          owner=m.project_owner,
+                                          tasks_csv_uuid=uuid.uuid4().hex)
 
     m.public_membership = f.MembershipFactory(project=m.public_project,
-                                          user=m.project_member_with_perms,
-                                          role__project=m.public_project,
-                                          role__permissions=list(map(lambda x: x[0], MEMBERS_PERMISSIONS)))
+                                              user=m.project_member_with_perms,
+                                              role__project=m.public_project,
+                                              role__permissions=list(map(lambda x: x[0], MEMBERS_PERMISSIONS)))
     m.private_membership1 = f.MembershipFactory(project=m.private_project1,
                                                 user=m.project_member_with_perms,
                                                 role__project=m.private_project1,
@@ -62,6 +70,18 @@ def data():
                         user=m.project_member_without_perms,
                         role__project=m.private_project2,
                         role__permissions=[])
+
+    f.MembershipFactory(project=m.public_project,
+                        user=m.project_owner,
+                        is_owner=True)
+
+    f.MembershipFactory(project=m.private_project1,
+                        user=m.project_owner,
+                        is_owner=True)
+
+    f.MembershipFactory(project=m.private_project2,
+                        user=m.project_owner,
+                        is_owner=True)
 
     m.public_task = f.TaskFactory(project=m.public_project,
                                   status__project=m.public_project,
@@ -120,23 +140,24 @@ def test_task_update(client, data):
         data.project_owner
     ]
 
-    task_data = TaskSerializer(data.public_task).data
-    task_data["subject"] = "test"
-    task_data = json.dumps(task_data)
-    results = helper_test_http_method(client, 'put', public_url, task_data, users)
-    assert results == [401, 403, 403, 200, 200]
+    with mock.patch.object(OCCResourceMixin, "_validate_and_update_version"):
+            task_data = TaskSerializer(data.public_task).data
+            task_data["subject"] = "test"
+            task_data = json.dumps(task_data)
+            results = helper_test_http_method(client, 'put', public_url, task_data, users)
+            assert results == [401, 403, 403, 200, 200]
 
-    task_data = TaskSerializer(data.private_task1).data
-    task_data["subject"] = "test"
-    task_data = json.dumps(task_data)
-    results = helper_test_http_method(client, 'put', private_url1, task_data, users)
-    assert results == [401, 403, 403, 200, 200]
+            task_data = TaskSerializer(data.private_task1).data
+            task_data["subject"] = "test"
+            task_data = json.dumps(task_data)
+            results = helper_test_http_method(client, 'put', private_url1, task_data, users)
+            assert results == [401, 403, 403, 200, 200]
 
-    task_data = TaskSerializer(data.private_task2).data
-    task_data["subject"] = "test"
-    task_data = json.dumps(task_data)
-    results = helper_test_http_method(client, 'put', private_url2, task_data, users)
-    assert results == [401, 403, 403, 200, 200]
+            task_data = TaskSerializer(data.private_task2).data
+            task_data["subject"] = "test"
+            task_data = json.dumps(task_data)
+            results = helper_test_http_method(client, 'put', private_url2, task_data, users)
+            assert results == [401, 403, 403, 200, 200]
 
 
 def test_task_delete(client, data):
@@ -240,17 +261,18 @@ def test_task_patch(client, data):
         data.project_owner
     ]
 
-    patch_data = json.dumps({"subject": "test", "version": data.public_task.version})
-    results = helper_test_http_method(client, 'patch', public_url, patch_data, users)
-    assert results == [401, 403, 403, 200, 200]
+    with mock.patch.object(OCCResourceMixin, "_validate_and_update_version"):
+            patch_data = json.dumps({"subject": "test", "version": data.public_task.version})
+            results = helper_test_http_method(client, 'patch', public_url, patch_data, users)
+            assert results == [401, 403, 403, 200, 200]
 
-    patch_data = json.dumps({"subject": "test", "version": data.private_task1.version})
-    results = helper_test_http_method(client, 'patch', private_url1, patch_data, users)
-    assert results == [401, 403, 403, 200, 200]
+            patch_data = json.dumps({"subject": "test", "version": data.private_task1.version})
+            results = helper_test_http_method(client, 'patch', private_url1, patch_data, users)
+            assert results == [401, 403, 403, 200, 200]
 
-    patch_data = json.dumps({"subject": "test", "version": data.private_task2.version})
-    results = helper_test_http_method(client, 'patch', private_url2, patch_data, users)
-    assert results == [401, 403, 403, 200, 200]
+            patch_data = json.dumps({"subject": "test", "version": data.private_task2.version})
+            results = helper_test_http_method(client, 'patch', private_url2, patch_data, users)
+            assert results == [401, 403, 403, 200, 200]
 
 
 def test_task_action_bulk_create(client, data):
@@ -290,3 +312,27 @@ def test_task_action_bulk_create(client, data):
     })
     results = helper_test_http_method(client, 'post', url, bulk_data, users)
     assert results == [401, 403, 403, 200, 200]
+
+
+def test_tasks_csv(client, data):
+    url = reverse('tasks-csv')
+    csv_public_uuid = data.public_project.tasks_csv_uuid
+    csv_private1_uuid = data.private_project1.tasks_csv_uuid
+    csv_private2_uuid = data.private_project1.tasks_csv_uuid
+
+    users = [
+        None,
+        data.registered_user,
+        data.project_member_without_perms,
+        data.project_member_with_perms,
+        data.project_owner
+    ]
+
+    results = helper_test_http_method(client, 'get', "{}?uuid={}".format(url, csv_public_uuid), None, users)
+    assert results == [200, 200, 200, 200, 200]
+
+    results = helper_test_http_method(client, 'get', "{}?uuid={}".format(url, csv_private1_uuid), None, users)
+    assert results == [200, 200, 200, 200, 200]
+
+    results = helper_test_http_method(client, 'get', "{}?uuid={}".format(url, csv_private2_uuid), None, users)
+    assert results == [200, 200, 200, 200, 200]

@@ -1,20 +1,117 @@
 # Changelog #
 
-## 1.2.0 (Unreleased)
+
+## 1.8.0 ??? (unreleased)
+
+### Features
+- Search by reference (thanks to [@artlepool](https://github.com/artlepool))
+- Add call 'by_username' to the API resource User
+
+### Misc
+- Lots of small and not so small bugfixes.
+
+
+## 1.7.0 Empetrum Nigrum (2015-05-21)
+
+### Features
+- Make Taiga translatable (i18n support).
+- i18n.
+  - Add spanish (es) translation.
+  - Add french (fr) translation.
+  - Add finish (fi) translation.
+  - Add catalan (ca) translation.
+  - Add traditional chinese (zh-Hant) translation.
+- Add Jitsi to our supported videoconference apps list
+- Add tags field to CSV reports.
+- Improve history (and email) comments created by all the GitHub actions
+
+### Misc
+- New contrib plugin for letschat (by Δndrea Stagi)
+- Remove djangorestframework from requirements. Move useful code to core.
+- Lots of small and not so small bugfixes.
+
+
+## 1.6.0 Abies Bifolia (2015-03-17)
+
+### Features
+- Added custom fields per project for user stories, tasks and issues.
+- Support of export to CSV user stories, tasks and issues.
+- Allow public projects.
+
+### Misc
+- New contrib plugin for HipChat (by Δndrea Stagi).
+- Lots of small and not so small bugfixes.
+- Updated some requirements.
+
+
+## 1.5.0 Betula Pendula - FOSDEM 2015 (2015-01-29)
+
+### Features
+- Improving SQL queries and performance.
+- Now you can export and import projects between Taiga instances.
+- Email redesign.
+- Support for archived status (not shown by default in Kanban).
+- Removing files from filesystem when deleting attachments.
+- Support for contrib plugins (existing yet: slack, hall and gogs).
+- Webhooks added (crazy integrations are welcome).
+
+### Misc
+- Lots of small and not so small bugfixes.
+
+
+## 1.4.0 Abies veitchii (2014-12-10)
+
+### Features
+- Bitbucket integration:
+  + Change status of user stories, tasks and issues with the commit messages.
+- Gitlab integration:
+  + Change status of user stories, tasks and issues with the commit messages.
+  + Sync issues creation in Taiga from Gitlab.
+- Support throttling.
+  + for anonymous users
+  + for authenticated users
+  + in import mode
+- Add project members stats endpoint.
+- Support of leave project.
+- Control of leave a project without admin user.
+- Improving OCC (Optimistic concurrency control)
+- Improving some SQL queries using djrom directly
+
+### Misc
+- Lots of small and not so small bugfixes.
+
+
+## 1.3.0 Dryas hookeriana (2014-11-18)
+
+### Features
+- GitHub integration (Phase I):
+  + Login/singin connector.
+  + Change status of user stories, tasks and issues with the commit messages.
+  + Sync issues creation in Taiga from GitHub.
+  + Sync comments in Taiga from GitHub issues.
+
+### Misc
+- Lots of small and not so small bugfixes.
+
+
+## 1.2.0 Picea obovata (2014-11-04)
 
 ### Features
 - Send an email to the user on signup.
 - Emit django signal on user signout.
+- Support for custom text when inviting users.
 
 ### Misc
-- Lots of small and not so small bugfixes
+- Lots of small and not so small bugfixes.
 
-## 1.1.0 (2014-10-13)
+
+## 1.1.0 Alnus maximowiczii (2014-10-13)
 
 ### Misc
 - Fix bugs related to unicode chars on attachments.
 - Fix wrong static url resolve usage on emails.
 - Fix some bugs on import/export api related with attachments.
+
 
 ## 1.0.0 (2014-10-07)
 

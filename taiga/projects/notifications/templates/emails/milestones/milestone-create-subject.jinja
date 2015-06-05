@@ -1,1 +1,3 @@
-[{{ object.project.name|safe }}] Created the milestone #{{ object.slug|safe }} "{{ object.name|safe }}"
+{% trans project=project.name|safe, milestone=snapshot.name|safe %}
+[{{ project }}] Created the sprint "{{ milestone }}"
+{% endtrans %}

@@ -73,6 +73,14 @@ class ProjectFactory(Factory):
     creation_template = factory.SubFactory("tests.factories.ProjectTemplateFactory")
 
 
+class ProjectModulesConfigFactory(Factory):
+    class Meta:
+        model = "projects.ProjectModulesConfig"
+        strategy = factory.CREATE_STRATEGY
+
+    project = factory.SubFactory("tests.factories.ProjectFactory")
+
+
 class RoleFactory(Factory):
     class Meta:
         model = "users.Role"
@@ -147,16 +155,6 @@ class WikiAttachmentFactory(Factory):
         strategy = factory.CREATE_STRATEGY
 
 
-class RolePointsFactory(Factory):
-    class Meta:
-        model = "userstories.RolePoints"
-        strategy = factory.CREATE_STRATEGY
-
-    user_story = factory.SubFactory("tests.factories.UserStoryFactory")
-    role = factory.SubFactory("tests.factories.RoleFactory")
-    points = factory.SubFactory("tests.factories.PointsFactory")
-
-
 class UserFactory(Factory):
     class Meta:
         model = "users.User"
@@ -189,6 +187,29 @@ class InvitationFactory(Factory):
     email = factory.Sequence(lambda n: "user{}@email.com".format(n))
 
 
+class WebhookFactory(Factory):
+    class Meta:
+        model = "webhooks.Webhook"
+        strategy = factory.CREATE_STRATEGY
+
+    project = factory.SubFactory("tests.factories.ProjectFactory")
+    url = "http://localhost:8080/test"
+    key = "factory-key"
+    name = "Factory-name"
+
+
+class WebhookLogFactory(Factory):
+    class Meta:
+        model = "webhooks.WebhookLog"
+        strategy = factory.CREATE_STRATEGY
+
+    webhook = factory.SubFactory("tests.factories.WebhookFactory")
+    url = "http://localhost:8080/test"
+    status = "200"
+    request_data = {"text": "test-request-data"}
+    response_data = {"text": "test-response-data"}
+
+
 class StorageEntryFactory(Factory):
     class Meta:
         model = "userstorage.StorageEntry"
@@ -196,7 +217,7 @@ class StorageEntryFactory(Factory):
 
     owner = factory.SubFactory("tests.factories.UserFactory")
     key = factory.Sequence(lambda n: "key-{}".format(n))
-    value = factory.Sequence(lambda n: "value {}".format(n))
+    value = factory.Sequence(lambda n: {"value": "value-{}".format(n)})
 
 
 class UserStoryFactory(Factory):
@@ -219,7 +240,6 @@ class UserStoryStatusFactory(Factory):
 
     name = factory.Sequence(lambda n: "User Story status {}".format(n))
     project = factory.SubFactory("tests.factories.ProjectFactory")
-
 
 
 class TaskStatusFactory(Factory):
@@ -248,6 +268,7 @@ class IssueFactory(Factory):
         model = "issues.Issue"
         strategy = factory.CREATE_STRATEGY
 
+    ref = factory.Sequence(lambda n: n)
     subject = factory.Sequence(lambda n: "Issue {}".format(n))
     description = factory.Sequence(lambda n: "Issue {} description".format(n))
     owner = factory.SubFactory("tests.factories.UserFactory")
@@ -272,6 +293,7 @@ class TaskFactory(Factory):
     status = factory.SubFactory("tests.factories.TaskStatusFactory")
     milestone = factory.SubFactory("tests.factories.MilestoneFactory")
     user_story = factory.SubFactory("tests.factories.UserStoryFactory")
+    tags = []
 
 
 class WikiPageFactory(Factory):
@@ -305,15 +327,6 @@ class IssueStatusFactory(Factory):
     project = factory.SubFactory("tests.factories.ProjectFactory")
 
 
-class UserStoryStatusFactory(Factory):
-    class Meta:
-        model = "projects.UserStoryStatus"
-        strategy = factory.CREATE_STRATEGY
-
-    name = factory.Sequence(lambda n: "User Story Status {}".format(n))
-    project = factory.SubFactory("tests.factories.ProjectFactory")
-
-
 class SeverityFactory(Factory):
     class Meta:
         model = "projects.Severity"
@@ -339,6 +352,63 @@ class IssueTypeFactory(Factory):
 
     name = factory.Sequence(lambda n: "Issue Type {}".format(n))
     project = factory.SubFactory("tests.factories.ProjectFactory")
+
+
+class UserStoryCustomAttributeFactory(Factory):
+    class Meta:
+        model = "custom_attributes.UserStoryCustomAttribute"
+        strategy = factory.CREATE_STRATEGY
+
+    name = factory.Sequence(lambda n: "UserStory Custom Attribute {}".format(n))
+    description = factory.Sequence(lambda n: "Description for UserStory Custom Attribute {}".format(n))
+    project = factory.SubFactory("tests.factories.ProjectFactory")
+
+
+class TaskCustomAttributeFactory(Factory):
+    class Meta:
+        model = "custom_attributes.TaskCustomAttribute"
+        strategy = factory.CREATE_STRATEGY
+
+    name = factory.Sequence(lambda n: "Task Custom Attribute {}".format(n))
+    description = factory.Sequence(lambda n: "Description for Task Custom Attribute {}".format(n))
+    project = factory.SubFactory("tests.factories.ProjectFactory")
+
+
+class IssueCustomAttributeFactory(Factory):
+    class Meta:
+        model = "custom_attributes.IssueCustomAttribute"
+        strategy = factory.CREATE_STRATEGY
+
+    name = factory.Sequence(lambda n: "Issue Custom Attribute {}".format(n))
+    description = factory.Sequence(lambda n: "Description for Issue Custom Attribute {}".format(n))
+    project = factory.SubFactory("tests.factories.ProjectFactory")
+
+
+class UserStoryCustomAttributesValuesFactory(Factory):
+    class Meta:
+        model = "custom_attributes.UserStoryCustomAttributesValues"
+        strategy = factory.CREATE_STRATEGY
+
+    attributes_values = {}
+    user_story = factory.SubFactory("tests.factories.UserStoryFactory")
+
+
+class TaskCustomAttributesValuesFactory(Factory):
+    class Meta:
+        model = "custom_attributes.TaskCustomAttributesValues"
+        strategy = factory.CREATE_STRATEGY
+
+    attributes_values = {}
+    task = factory.SubFactory("tests.factories.TaskFactory")
+
+
+class IssueCustomAttributesValuesFactory(Factory):
+    class Meta:
+        model = "custom_attributes.IssueCustomAttributesValues"
+        strategy = factory.CREATE_STRATEGY
+
+    attributes_values = {}
+    issue = factory.SubFactory("tests.factories.IssueFactory")
 
 
 # class FanFactory(Factory):
@@ -390,6 +460,14 @@ class AttachmentFactory(Factory):
     content_type = factory.SubFactory("tests.factories.ContentTypeFactory")
     object_id = factory.Sequence(lambda n: n)
     attached_file = factory.django.FileField(data=b"File contents")
+
+
+class HistoryEntryFactory(Factory):
+    class Meta:
+        model = "history.HistoryEntry"
+        strategy = factory.CREATE_STRATEGY
+
+    type = 1
 
 
 def create_issue(**kwargs):

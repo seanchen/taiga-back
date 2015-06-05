@@ -15,18 +15,17 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-import json
 import pytest
-from unittest.mock import MagicMock
 from unittest.mock import patch
 
 from django.core.urlresolvers import reverse
 from .. import factories as f
 
+from taiga.base.utils import json
 from taiga.projects.history import services
 from taiga.projects.history.models import HistoryEntry
 from taiga.projects.history.choices import HistoryType
-
+from taiga.projects.history.services import make_key_from_model_object
 
 pytestmark = pytest.mark.django_db
 
@@ -82,6 +81,7 @@ def test_take_two_snapshots_without_changes():
     assert qs_all.count() == 1
     assert qs_created.count() == 1
     assert qs_hidden.count() == 0
+
 
 def test_take_snapshot_from_deleted_object():
     issue = f.IssueFactory.create()
@@ -143,7 +143,7 @@ def test_issue_resource_history_test(client):
     user = f.UserFactory.create()
     project = f.ProjectFactory.create(owner=user)
     role = f.RoleFactory.create(project=project)
-    member = f.MembershipFactory.create(project=project, user=user, role=role)
+    f.MembershipFactory.create(project=project, user=user, role=role, is_owner=True)
     issue = f.IssueFactory.create(owner=user, project=project)
 
     mock_path = "taiga.projects.issues.api.IssueViewSet.pre_conditions_on_save"
@@ -158,7 +158,7 @@ def test_issue_resource_history_test(client):
 
     assert qs_all.count() == 0
 
-    with patch(mock_path) as m:
+    with patch(mock_path):
         data = {"subject": "Fooooo", "version": issue.version}
         response = client.patch(url, json.dumps(data), content_type="application/json")
         assert response.status_code == 200
@@ -168,7 +168,7 @@ def test_issue_resource_history_test(client):
     assert qs_changed.count() == 0
     assert qs_deleted.count() == 0
 
-    with patch(mock_path) as m:
+    with patch(mock_path):
         response = client.delete(url)
         assert response.status_code == 204
 
@@ -200,6 +200,7 @@ def test_take_hidden_snapshot():
 def test_history_with_only_comment_shouldnot_be_hidden(client):
     project = f.create_project()
     us = f.create_userstory(project=project)
+    f.MembershipFactory.create(project=project, user=project.owner, is_owner=True)
 
     qs_all = HistoryEntry.objects.all()
     qs_hidden = qs_all.filter(is_hidden=True)
@@ -209,7 +210,6 @@ def test_history_with_only_comment_shouldnot_be_hidden(client):
     url = reverse("userstories-detail", args=[us.pk])
     data = json.dumps({"comment": "test comment", "version": us.version})
 
-    print(url, data)
     client.login(project.owner)
     response = client.patch(url, data, content_type="application/json")
 
@@ -217,3 +217,20 @@ def test_history_with_only_comment_shouldnot_be_hidden(client):
     assert qs_all.count() == 1
     assert qs_hidden.count() == 0
 
+
+def test_delete_comment_by_project_owner(client):
+    project = f.create_project()
+    us = f.create_userstory(project=project)
+    f.MembershipFactory.create(project=project, user=project.owner, is_owner=True)
+    key = make_key_from_model_object(us)
+    history_entry = f.HistoryEntryFactory.create(type=HistoryType.change,
+                                                 comment="testing",
+                                                 key=key,
+                                                 diff={},
+                                                 user={"pk": project.owner.id})
+
+    client.login(project.owner)
+    url = reverse("userstory-history-delete-comment", args=(us.id,))
+    url = "%s?id=%s" % (url, history_entry.id)
+    response = client.post(url, content_type="application/json")
+    assert 200 == response.status_code, response.status_code

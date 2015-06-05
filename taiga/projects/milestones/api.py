@@ -14,18 +14,13 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-from django.utils.translation import ugettext_lazy as _
-from django.shortcuts import get_object_or_404
-
-from rest_framework.permissions import IsAuthenticated
-from rest_framework.response import Response
-
 from taiga.base import filters
-from taiga.base import exceptions as exc
+from taiga.base import response
 from taiga.base.decorators import detail_route
 from taiga.base.api import ModelCrudViewSet
+from taiga.base.api.utils import get_object_or_404
 
-from taiga.projects.notifications import WatchedResourceMixin
+from taiga.projects.notifications.mixins import WatchedResourceMixin
 from taiga.projects.history.mixins import HistoryResourceMixin
 
 
@@ -40,14 +35,19 @@ class MilestoneViewSet(HistoryResourceMixin, WatchedResourceMixin, ModelCrudView
     serializer_class = serializers.MilestoneSerializer
     permission_classes = (permissions.MilestonePermission,)
     filter_backends = (filters.CanViewMilestonesFilterBackend,)
-    filter_fields = ("project",)
+    filter_fields = ("project", "closed")
 
     def get_queryset(self):
         qs = models.Milestone.objects.all()
         qs = qs.prefetch_related("user_stories",
                                  "user_stories__role_points",
                                  "user_stories__role_points__points",
-                                 "user_stories__role_points__role")
+                                 "user_stories__role_points__role",
+                                 "user_stories__generated_from_issue",
+                                 "user_stories__project",
+                                 "watchers",
+                                 "user_stories__watchers")
+        qs = qs.select_related("project")
         qs = qs.order_by("-estimated_start")
         return qs
 
@@ -92,4 +92,4 @@ class MilestoneViewSet(HistoryResourceMixin, WatchedResourceMixin, ModelCrudView
             current_date = current_date + datetime.timedelta(days=1)
             optimal_points -= optimal_points_per_day
 
-        return Response(milestone_stats)
+        return response.Ok(milestone_stats)

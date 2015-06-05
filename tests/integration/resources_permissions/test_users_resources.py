@@ -44,7 +44,33 @@ def test_user_retrieve(client, data):
     ]
 
     results = helper_test_http_method(client, 'get', url, None, users)
-    assert results == [401, 200, 403, 200]
+    assert results == [200, 200, 200, 200]
+
+
+def test_user_me(client, data):
+    url = reverse('users-me')
+
+    users = [
+        None,
+        data.registered_user
+    ]
+
+    results = helper_test_http_method(client, 'get', url, None, users)
+    assert results == [401, 200]
+
+
+def test_user_by_username(client, data):
+    url = reverse('users-by-username')
+
+    users = [
+        None,
+        data.registered_user,
+        data.other_user,
+        data.superuser,
+    ]
+
+    results = helper_test_http_method(client, 'get', "{}?username={}".format(url, data.registered_user.username), None, users)
+    assert results == [200, 200, 200, 200]
 
 
 def test_user_update(client, data):
@@ -60,6 +86,7 @@ def test_user_update(client, data):
     user_data = UserSerializer(data.registered_user).data
     user_data["full_name"] = "test"
     user_data = json.dumps(user_data)
+
     results = helper_test_http_method(client, 'put', url, user_data, users)
     assert results == [401, 200, 403, 200]
 
@@ -74,7 +101,7 @@ def test_user_delete(client, data):
     ]
 
     results = helper_test_http_method(client, 'delete', url, None, users)
-    assert results == [401, 403, 204]
+    assert results == [404, 404, 204]
 
 
 def test_user_list(client, data):
@@ -89,14 +116,14 @@ def test_user_list(client, data):
 
     response = client.get(url)
     users_data = json.loads(response.content.decode('utf-8'))
-    assert len(users_data) == 0
+    assert len(users_data) == 1
     assert response.status_code == 200
 
     client.login(data.other_user)
 
     response = client.get(url)
     users_data = json.loads(response.content.decode('utf-8'))
-    assert len(users_data) == 0
+    assert len(users_data) == 1
     assert response.status_code == 200
 
     client.login(data.superuser)
@@ -134,7 +161,8 @@ def test_user_patch(client, data):
 
     patch_data = json.dumps({"full_name": "test"})
     results = helper_test_http_method(client, 'patch', url, patch_data, users)
-    assert results == [401, 200, 403, 200]
+    assert results == [404, 200, 404, 200]
+
 
 def test_user_action_change_password(client, data):
     url = reverse('users-change-password')
@@ -152,7 +180,6 @@ def test_user_action_change_password(client, data):
         data.other_user,
         data.superuser,
     ]
-
 
     post_data = json.dumps({"current_password": "test-current-password", "password": "test-password"})
     results = helper_test_http_method(client, 'post', url, post_data, users)
@@ -224,6 +251,7 @@ def test_user_action_change_password_from_recovery(client, data):
     results = helper_test_http_method(client, 'post', url, patch_data, users, reset_token)
     assert results == [204, 204, 204, 204]
 
+
 def test_user_action_password_recovery(client, data):
     url = reverse('users-password-recovery')
 
@@ -239,6 +267,7 @@ def test_user_action_password_recovery(client, data):
     patch_data = json.dumps({"username": "test"})
     results = helper_test_http_method(client, 'post', url, patch_data, users)
     assert results == [200, 200, 200, 200]
+
 
 def test_user_action_change_email(client, data):
     url = reverse('users-change-email')

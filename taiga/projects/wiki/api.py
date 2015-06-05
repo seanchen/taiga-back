@@ -14,21 +14,20 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-from django.utils.translation import ugettext_lazy as _
-from django.shortcuts import get_object_or_404
+from django.utils.translation import ugettext as _
 
-from rest_framework.permissions import IsAuthenticated
-from rest_framework.response import Response
-from rest_framework import status
+from taiga.base.api.permissions import IsAuthenticated
 
 from taiga.base import filters
 from taiga.base import exceptions as exc
+from taiga.base import response
 from taiga.base.api import ModelCrudViewSet
+from taiga.base.api.utils import get_object_or_404
 from taiga.base.decorators import list_route
 from taiga.projects.models import Project
 from taiga.mdrender.service import render as mdrender
 
-from taiga.projects.notifications import WatchedResourceMixin
+from taiga.projects.notifications.mixins import WatchedResourceMixin
 from taiga.projects.history.mixins import HistoryResourceMixin
 from taiga.projects.occ import OCCResourceMixin
 
@@ -45,23 +44,30 @@ class WikiViewSet(OCCResourceMixin, HistoryResourceMixin, WatchedResourceMixin, 
     filter_backends = (filters.CanViewWikiPagesFilterBackend,)
     filter_fields = ("project", "slug")
 
+    @list_route(methods=["GET"])
+    def by_slug(self, request):
+        slug = request.QUERY_PARAMS.get("slug", None)
+        project_id = request.QUERY_PARAMS.get("project", None)
+        wiki_page = get_object_or_404(models.WikiPage, slug=slug, project_id=project_id)
+        return self.retrieve(request, pk=wiki_page.pk)
+
     @list_route(methods=["POST"])
     def render(self, request, **kwargs):
         content = request.DATA.get("content", None)
         project_id = request.DATA.get("project_id", None)
 
         if not content:
-            raise exc.WrongArguments({"content": "No content parameter"})
+            raise exc.WrongArguments({"content": _("'content' parameter is mandatory")})
 
         if not project_id:
-            raise exc.WrongArguments({"project_id": "No project_id parameter"})
+            raise exc.WrongArguments({"project_id": _("'project_id' parameter is mandatory")})
 
         project = get_object_or_404(Project, pk=project_id)
 
         self.check_permissions(request, "render", project)
 
         data = mdrender(project, content)
-        return Response({"data": data})
+        return response.Ok({"data": data})
 
     def pre_save(self, obj):
         if not obj.owner:

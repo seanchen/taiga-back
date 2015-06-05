@@ -1,4 +1,5 @@
-# Copyright (C) 2014 Andrey Antukh <niwi@niwi.be> # Copyright (C) 2014 Jesús Espino <jespinog@gmail.com>
+# Copyright (C) 2014 Andrey Antukh <niwi@niwi.be>
+# Copyright (C) 2014 Jesús Espino <jespinog@gmail.com>
 # Copyright (C) 2014 David Barragán <bameda@dbarragan.com>
 # This program is free software: you can redistribute it and/or modify
 # it under the terms of the GNU Affero General Public License as
@@ -13,27 +14,58 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
+from django.utils.translation import ugettext as _
 
-from taiga.base.api.permissions import (TaigaResourcePermission, HasProjectPerm,
-                                        IsAuthenticated, IsProjectOwner,
-                                        AllowAny, IsSuperUser)
+from taiga.base.api.permissions import TaigaResourcePermission
+from taiga.base.api.permissions import HasProjectPerm
+from taiga.base.api.permissions import IsAuthenticated
+from taiga.base.api.permissions import IsProjectOwner
+from taiga.base.api.permissions import AllowAny
+from taiga.base.api.permissions import IsSuperUser
+from taiga.base.api.permissions import PermissionComponent
+
+from taiga.base import exceptions as exc
+from taiga.projects.models import Membership
+
+from . import services
+
+class CanLeaveProject(PermissionComponent):
+    def check_permissions(self, request, view, obj=None):
+        if not obj or not request.user.is_authenticated():
+            return False
+
+        try:
+            if not services.can_user_leave_project(request.user, obj):
+                raise exc.PermissionDenied(_("You can't leave the project if there are no "
+                                             "more owners"))
+            return True
+        except Membership.DoesNotExist:
+            return False
 
 
 class ProjectPermission(TaigaResourcePermission):
     retrieve_perms = HasProjectPerm('view_project')
+    by_slug_perms = HasProjectPerm('view_project')
     create_perms = IsAuthenticated()
     update_perms = IsProjectOwner()
+    partial_update_perms = IsProjectOwner()
     destroy_perms = IsProjectOwner()
+    modules_perms = IsProjectOwner()
     list_perms = AllowAny()
-    stats_perms = AllowAny()
+    stats_perms = HasProjectPerm('view_project')
+    member_stats_perms = HasProjectPerm('view_project')
+    regenerate_userstories_csv_uuid_perms = IsProjectOwner()
+    regenerate_issues_csv_uuid_perms = IsProjectOwner()
+    regenerate_tasks_csv_uuid_perms = IsProjectOwner()
     star_perms = IsAuthenticated()
     unstar_perms = IsAuthenticated()
-    issues_stats_perms = AllowAny()
-    issues_filters_data_perms = AllowAny()
+    issues_stats_perms = HasProjectPerm('view_project')
+    issues_filters_data_perms = HasProjectPerm('view_project')
     tags_perms = HasProjectPerm('view_project')
     tags_colors_perms = HasProjectPerm('view_project')
     fans_perms = HasProjectPerm('view_project')
     create_template_perms = IsSuperUser()
+    leave_perms = CanLeaveProject()
 
 
 class MembershipPermission(TaigaResourcePermission):
@@ -113,14 +145,6 @@ class IssueTypePermission(TaigaResourcePermission):
     destroy_perms = IsProjectOwner()
     list_perms = AllowAny()
     bulk_update_order_perms = IsProjectOwner()
-
-
-class RolesPermission(TaigaResourcePermission):
-    retrieve_perms = HasProjectPerm('view_project')
-    create_perms = IsProjectOwner()
-    update_perms = IsProjectOwner()
-    destroy_perms = IsProjectOwner()
-    list_perms = AllowAny()
 
 
 # Project Templates

@@ -16,21 +16,22 @@
 
 from contextlib import suppress
 
+
 from django.apps import apps
 from django.db import transaction
 from django.utils.translation import ugettext as _
-from django.shortcuts import get_object_or_404
 from django.core.exceptions import ObjectDoesNotExist
+from django.http import HttpResponse
 
-from rest_framework.response import Response
-from rest_framework import status
-
-from taiga.base import filters, response
+from taiga.base import filters
 from taiga.base import exceptions as exc
+from taiga.base import response
+from taiga.base import status
 from taiga.base.decorators import list_route
 from taiga.base.api import ModelCrudViewSet
+from taiga.base.api.utils import get_object_or_404
 
-from taiga.projects.notifications import WatchedResourceMixin
+from taiga.projects.notifications.mixins import WatchedResourceMixin
 from taiga.projects.history.mixins import HistoryResourceMixin
 from taiga.projects.occ import OCCResourceMixin
 
@@ -50,19 +51,22 @@ class UserStoryViewSet(OCCResourceMixin, HistoryResourceMixin, WatchedResourceMi
     permission_classes = (permissions.UserStoryPermission,)
 
     filter_backends = (filters.CanViewUsFilterBackend, filters.TagsFilter,
-                       filters.QFilter)
+                       filters.QFilter, filters.OrderByFilterMixin)
     retrieve_exclude_filters = (filters.TagsFilter,)
-    filter_fields = ['project', 'milestone', 'milestone__isnull', 'status', 'is_archived']
+    filter_fields = ["project", "milestone", "milestone__isnull", "status",
+        "is_archived", "status__is_archived", "assigned_to",
+        "status__is_closed", "watchers", "is_closed"]
+    order_by_fields = ["backlog_order", "sprint_order", "kanban_order"]
 
     # Specific filter used for filtering neighbor user stories
     _neighbor_tags_filter = filters.TagsFilter('neighbor_tags')
 
     def get_queryset(self):
         qs = self.model.objects.all()
-        qs = qs.prefetch_related("points",
-                                 "role_points",
+        qs = qs.prefetch_related("role_points",
                                  "role_points__points",
-                                 "role_points__role")
+                                 "role_points__role",
+                                 "watchers")
         qs = qs.select_related("milestone", "project")
         return qs
 
@@ -95,6 +99,26 @@ class UserStoryViewSet(OCCResourceMixin, HistoryResourceMixin, WatchedResourceMi
 
         super().post_save(obj, created)
 
+    @list_route(methods=["GET"])
+    def by_ref(self, request):
+        ref = request.QUERY_PARAMS.get("ref", None)
+        project_id = request.QUERY_PARAMS.get("project", None)
+        userstory = get_object_or_404(models.UserStory, ref=ref, project_id=project_id)
+        return self.retrieve(request, pk=userstory.pk)
+
+    @list_route(methods=["GET"])
+    def csv(self, request):
+        uuid = request.QUERY_PARAMS.get("uuid", None)
+        if uuid is None:
+            return response.NotFound()
+
+        project = get_object_or_404(Project, userstories_csv_uuid=uuid)
+        queryset = project.user_stories.all().order_by('ref')
+        data = services.userstories_to_csv(project, queryset)
+        csv_response = HttpResponse(data.getvalue(), content_type='application/csv; charset=utf-8')
+        csv_response['Content-Disposition'] = 'attachment; filename="userstories.csv"'
+        return csv_response
+
     @list_route(methods=["POST"])
     def bulk_create(self, request, **kwargs):
         serializer = serializers.UserStoriesBulkSerializer(data=request.DATA)
@@ -110,8 +134,7 @@ class UserStoryViewSet(OCCResourceMixin, HistoryResourceMixin, WatchedResourceMi
             return response.Ok(user_stories_serialized.data)
         return response.BadRequest(serializer.errors)
 
-    @list_route(methods=["POST"])
-    def bulk_update_backlog_order(self, request, **kwargs):
+    def _bulk_update_order(self, order_field, request, **kwargs):
         serializer = serializers.UpdateUserStoriesOrderBulkSerializer(data=request.DATA)
         if not serializer.is_valid():
             return response.BadRequest(serializer.errors)
@@ -122,42 +145,22 @@ class UserStoryViewSet(OCCResourceMixin, HistoryResourceMixin, WatchedResourceMi
         self.check_permissions(request, "bulk_update_order", project)
         services.update_userstories_order_in_bulk(data["bulk_stories"],
                                                   project=project,
-                                                  field="backlog_order")
+                                                  field=order_field)
         services.snapshot_userstories_in_bulk(data["bulk_stories"], request.user)
 
         return response.NoContent()
+
+    @list_route(methods=["POST"])
+    def bulk_update_backlog_order(self, request, **kwargs):
+        return self._bulk_update_order("backlog_order", request, **kwargs)
 
     @list_route(methods=["POST"])
     def bulk_update_sprint_order(self, request, **kwargs):
-        serializer = serializers.UpdateUserStoriesOrderBulkSerializer(data=request.DATA)
-        if not serializer.is_valid():
-            return response.BadRequest(serializer.errors)
-
-        data = serializer.data
-        project = get_object_or_404(Project, pk=data["project_id"])
-
-        self.check_permissions(request, "bulk_update_order", project)
-        services.update_userstories_order_in_bulk(data["bulk_stories"],
-                                                  project=project,
-                                                  field="sprint_order")
-        services.snapshot_userstories_in_bulk(data["bulk_stories"], request.user)
-        return response.NoContent()
+        return self._bulk_update_order("sprint_order", request, **kwargs)
 
     @list_route(methods=["POST"])
     def bulk_update_kanban_order(self, request, **kwargs):
-        serializer = serializers.UpdateUserStoriesOrderBulkSerializer(data=request.DATA)
-        if not serializer.is_valid():
-            return response.BadRequest(serializer.errors)
-
-        data = serializer.data
-        project = get_object_or_404(Project, pk=data["project_id"])
-
-        self.check_permissions(request, "bulk_update_order", project)
-        services.update_userstories_order_in_bulk(data["bulk_stories"],
-                                                  project=project,
-                                                  field="kanban_order")
-        services.snapshot_userstories_in_bulk(data["bulk_stories"], request.user)
-        return response.NoContent()
+        return self._bulk_update_order("kanban_order", request, **kwargs)
 
     @transaction.atomic
     def create(self, *args, **kwargs):
@@ -167,7 +170,7 @@ class UserStoryViewSet(OCCResourceMixin, HistoryResourceMixin, WatchedResourceMi
         if response.status_code == status.HTTP_201_CREATED and self.object.generated_from_issue:
             self.object.generated_from_issue.save()
 
-            comment = _("Generate the user story [US #{ref} - "
+            comment = _("Generating the user story [US #{ref} - "
                         "{subject}](:us:{ref} \"US #{ref} - {subject}\")")
             comment = comment.format(ref=self.object.ref, subject=self.object.subject)
             history = take_snapshot(self.object.generated_from_issue,
@@ -177,4 +180,3 @@ class UserStoryViewSet(OCCResourceMixin, HistoryResourceMixin, WatchedResourceMi
             self.send_notifications(self.object.generated_from_issue, history)
 
         return response
-

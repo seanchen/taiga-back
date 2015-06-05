@@ -1,3 +1,8 @@
-- Project: {{ object.project.name }}
-- Milestone #{{ object.slug }}: {{ object.name }}
-- Deleted by {{ changer.get_full_name() }}
+{% trans user=user.get_full_name()|safe, changer=changer.get_full_name()|safe, project=project.name|safe, name=snapshot.name|safe %}
+Sprint deleted
+Hello {{ user }}, {{ changer }} has deleted an sprint on {{ project }}
+Sprint {{ name }}
+
+---
+The Taiga Team
+{% endtrans %}

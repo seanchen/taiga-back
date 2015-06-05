@@ -18,40 +18,35 @@ from taiga.base import routers
 
 router = routers.DefaultRouter(trailing_slash=False)
 
-# taiga.users
-from taiga.users.api import UsersViewSet
+# Locales
+from taiga.locale.api import LocalesViewSet
+
+router.register(r"locales", LocalesViewSet, base_name="locales")
+
+
+# Users & Roles
 from taiga.auth.api import AuthViewSet
+from taiga.users.api import UsersViewSet
+from taiga.users.api import RolesViewSet
 
-router.register(r"users", UsersViewSet, base_name="users")
 router.register(r"auth", AuthViewSet, base_name="auth")
+router.register(r"users", UsersViewSet, base_name="users")
+router.register(r"roles", RolesViewSet, base_name="roles")
 
 
-#taiga.userstorage
+# User Storage
 from taiga.userstorage.api import StorageEntriesViewSet
 
 router.register(r"user-storage", StorageEntriesViewSet, base_name="user-storage")
 
 
-# Resolver
-from taiga.projects.references.api import ResolverViewSet
+# Notify policies
+from taiga.projects.notifications.api import NotifyPolicyViewSet
 
-router.register(r"resolver", ResolverViewSet, base_name="resolver")
-
-
-# Search
-from taiga.searches.api import SearchViewSet
-
-router.register(r"search", SearchViewSet, base_name="search")
+router.register(r"notify-policies", NotifyPolicyViewSet, base_name="notifications")
 
 
-# Importer
-from taiga.export_import.api import ProjectImporterViewSet
-
-router.register(r"importer", ProjectImporterViewSet, base_name="importer")
-
-
-# Projects & Types
-from taiga.projects.api import RolesViewSet
+# Projects & Selectors
 from taiga.projects.api import ProjectViewSet
 from taiga.projects.api import MembershipViewSet
 from taiga.projects.api import InvitationViewSet
@@ -64,8 +59,6 @@ from taiga.projects.api import PriorityViewSet
 from taiga.projects.api import SeverityViewSet
 from taiga.projects.api import ProjectTemplateViewSet
 
-
-router.register(r"roles", RolesViewSet, base_name="roles")
 router.register(r"projects", ProjectViewSet, base_name="projects")
 router.register(r"project-templates", ProjectTemplateViewSet, base_name="project-templates")
 router.register(r"memberships", MembershipViewSet, base_name="memberships")
@@ -78,36 +71,53 @@ router.register(r"issue-types", IssueTypeViewSet, base_name="issue-types")
 router.register(r"priorities", PriorityViewSet, base_name="priorities")
 router.register(r"severities",SeverityViewSet , base_name="severities")
 
+
+# Custom Attributes
+from taiga.projects.custom_attributes.api import UserStoryCustomAttributeViewSet
+from taiga.projects.custom_attributes.api import TaskCustomAttributeViewSet
+from taiga.projects.custom_attributes.api import IssueCustomAttributeViewSet
+from taiga.projects.custom_attributes.api import UserStoryCustomAttributesValuesViewSet
+from taiga.projects.custom_attributes.api import TaskCustomAttributesValuesViewSet
+from taiga.projects.custom_attributes.api import IssueCustomAttributesValuesViewSet
+
+router.register(r"userstory-custom-attributes", UserStoryCustomAttributeViewSet,
+                base_name="userstory-custom-attributes")
+router.register(r"task-custom-attributes", TaskCustomAttributeViewSet,
+                base_name="task-custom-attributes")
+router.register(r"issue-custom-attributes", IssueCustomAttributeViewSet,
+                base_name="issue-custom-attributes")
+
+router.register(r"userstories/custom-attributes-values", UserStoryCustomAttributesValuesViewSet,
+                base_name="userstory-custom-attributes-values")
+router.register(r"tasks/custom-attributes-values", TaskCustomAttributesValuesViewSet,
+                base_name="task-custom-attributes-values")
+router.register(r"issues/custom-attributes-values", IssueCustomAttributesValuesViewSet,
+                base_name="issue-custom-attributes-values")
+
+
+# Search
+from taiga.searches.api import SearchViewSet
+
+router.register(r"search", SearchViewSet, base_name="search")
+
+
+# Resolver
+from taiga.projects.references.api import ResolverViewSet
+
+router.register(r"resolver", ResolverViewSet, base_name="resolver")
+
+
 # Attachments
 from taiga.projects.attachments.api import UserStoryAttachmentViewSet
 from taiga.projects.attachments.api import IssueAttachmentViewSet
 from taiga.projects.attachments.api import TaskAttachmentViewSet
 from taiga.projects.attachments.api import WikiAttachmentViewSet
 
-router.register(r"userstories/attachments", UserStoryAttachmentViewSet, base_name="userstory-attachments")
+router.register(r"userstories/attachments", UserStoryAttachmentViewSet,
+                base_name="userstory-attachments")
 router.register(r"tasks/attachments", TaskAttachmentViewSet, base_name="task-attachments")
 router.register(r"issues/attachments", IssueAttachmentViewSet, base_name="issue-attachments")
 router.register(r"wiki/attachments", WikiAttachmentViewSet, base_name="wiki-attachments")
-
-
-# History & Components
-from taiga.projects.history.api import UserStoryHistory
-from taiga.projects.history.api import TaskHistory
-from taiga.projects.history.api import IssueHistory
-from taiga.projects.history.api import WikiHistory
-
-router.register(r"history/userstory", UserStoryHistory, base_name="userstory-history")
-router.register(r"history/task", TaskHistory, base_name="task-history")
-router.register(r"history/issue", IssueHistory, base_name="issue-history")
-router.register(r"history/wiki", WikiHistory, base_name="wiki-history")
-
-
-# Timelines
-from taiga.timeline.api import UserTimeline
-from taiga.timeline.api import ProjectTimeline
-
-router.register(r"timeline/user", UserTimeline, base_name="user-timeline")
-router.register(r"timeline/project", ProjectTimeline, base_name="project-timeline")
 
 
 # Project components
@@ -126,13 +136,61 @@ router.register(r"issues/(?P<issue_id>\d+)/voters", VotersViewSet, base_name="is
 router.register(r"wiki", WikiViewSet, base_name="wiki")
 router.register(r"wiki-links", WikiLinkViewSet, base_name="wiki-links")
 
-# Notify policies
-from taiga.projects.notifications.api import NotifyPolicyViewSet
 
-router.register(r"notify-policies", NotifyPolicyViewSet, base_name="notifications")
+# History & Components
+from taiga.projects.history.api import UserStoryHistory
+from taiga.projects.history.api import TaskHistory
+from taiga.projects.history.api import IssueHistory
+from taiga.projects.history.api import WikiHistory
+
+router.register(r"history/userstory", UserStoryHistory, base_name="userstory-history")
+router.register(r"history/task", TaskHistory, base_name="task-history")
+router.register(r"history/issue", IssueHistory, base_name="issue-history")
+router.register(r"history/wiki", WikiHistory, base_name="wiki-history")
+
+
+# Timelines
+from taiga.timeline.api import ProfileTimeline
+from taiga.timeline.api import UserTimeline
+from taiga.timeline.api import ProjectTimeline
+
+router.register(r"timeline/profile", ProfileTimeline, base_name="profile-timeline")
+router.register(r"timeline/user", UserTimeline, base_name="user-timeline")
+router.register(r"timeline/project", ProjectTimeline, base_name="project-timeline")
+
+
+# Webhooks
+from taiga.webhooks.api import WebhookViewSet
+from taiga.webhooks.api import WebhookLogViewSet
+
+router.register(r"webhooks", WebhookViewSet, base_name="webhooks")
+router.register(r"webhooklogs", WebhookLogViewSet, base_name="webhooklogs")
+
+
+# GitHub webhooks
+from taiga.hooks.github.api import GitHubViewSet
+
+router.register(r"github-hook", GitHubViewSet, base_name="github-hook")
+
+
+# Gitlab webhooks
+from taiga.hooks.gitlab.api import GitLabViewSet
+
+router.register(r"gitlab-hook", GitLabViewSet, base_name="gitlab-hook")
+
+
+# Bitbucket webhooks
+from taiga.hooks.bitbucket.api import BitBucketViewSet
+
+router.register(r"bitbucket-hook", BitBucketViewSet, base_name="bitbucket-hook")
+
+
+# Importer
+from taiga.export_import.api import ProjectImporterViewSet, ProjectExporterViewSet
+
+router.register(r"importer", ProjectImporterViewSet, base_name="importer")
+router.register(r"exporter", ProjectExporterViewSet, base_name="exporter")
 
 
 # feedback
 #   - see taiga.feedback.routers and taiga.feedback.apps
-
-

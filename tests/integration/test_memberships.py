@@ -34,6 +34,7 @@ def test_api_create_bulk_members(client):
     joseph = f.UserFactory.create()
     tester = f.RoleFactory(project=project, name="Tester")
     gamer = f.RoleFactory(project=project, name="Gamer")
+    f.MembershipFactory(project=project, user=project.owner, is_owner=True)
 
     url = reverse("memberships-bulk-create")
 
@@ -51,9 +52,11 @@ def test_api_create_bulk_members(client):
     assert response.data[0]["email"] == john.email
     assert response.data[1]["email"] == joseph.email
 
+
 def test_api_create_bulk_members_with_extra_text(client, outbox):
     project = f.ProjectFactory()
     tester = f.RoleFactory(project=project, name="Tester")
+    f.MembershipFactory(project=project, user=project.owner, is_owner=True)
     url = reverse("memberships-bulk-create")
 
     invitation_extra_text = "this is a not so random invitation text"
@@ -75,8 +78,10 @@ def test_api_create_bulk_members_with_extra_text(client, outbox):
     assert message.to == ["john@email.com"]
     assert "this is a not so random invitation text" in message.body
 
+
 def test_api_resend_invitation(client, outbox):
-    invitation = f.create_invitation()
+    invitation = f.create_invitation(user=None)
+    f.MembershipFactory(project=invitation.project, user=invitation.project.owner, is_owner=True)
     url = reverse("memberships-resend-invitation", kwargs={"pk": invitation.pk})
 
     client.login(invitation.project.owner)
@@ -91,6 +96,7 @@ def test_api_invite_existing_user(client, outbox):
     "Should create the invitation linked to that user"
     user = f.UserFactory.create()
     role = f.RoleFactory.create()
+    f.MembershipFactory(project=role.project, user=role.project.owner, is_owner=True)
 
     client.login(role.project.owner)
 
@@ -108,17 +114,86 @@ def test_api_invite_existing_user(client, outbox):
     assert message.to == [user.email]
     assert "Added to the project" in message.subject
 
-def test_api_create_invalid_membership(client):
-    "Should create the invitation linked to that user"
+
+def test_api_create_invalid_membership_email_failing(client):
+    "Should not create the invitation linked to that user"
     user = f.UserFactory.create()
     role = f.RoleFactory.create()
-
     client.login(role.project.owner)
 
     url = reverse("memberships-list")
     data = {"role": role.pk, "project": role.project.pk}
 
-    response = client.json.post(url, data)
+    response = client.json.post(url, json.dumps(data))
 
     assert response.status_code == 400, response.data
     assert user.memberships.count() == 0
+
+
+def test_api_create_invalid_membership_role_doesnt_exist_in_the_project(client):
+    "Should not create the invitation linked to that user"
+    user = f.UserFactory.create()
+    role = f.RoleFactory.create()
+    project = f.ProjectFactory.create()
+
+    client.login(project.owner)
+
+    url = reverse("memberships-list")
+    data = {"role": role.pk, "project": project.pk, "email": user.email}
+
+    response = client.json.post(url, json.dumps(data))
+
+    assert response.status_code == 400, response.data
+    assert response.data["role"][0] == "Invalid role for the project"
+    assert user.memberships.count() == 0
+
+
+def test_api_create_membership(client):
+    membership = f.MembershipFactory(is_owner=True)
+    role = f.RoleFactory.create(project=membership.project)
+    user = f.UserFactory.create()
+
+    client.login(membership.user)
+    url = reverse("memberships-list")
+    data = {"role": role.pk, "project": role.project.pk, "email": user.email}
+    response = client.json.post(url, json.dumps(data))
+
+    assert response.status_code == 201
+    assert response.data["user_email"] == user.email
+
+
+def test_api_edit_membership(client):
+    membership = f.MembershipFactory(is_owner=True)
+    client.login(membership.user)
+    url = reverse("memberships-detail", args=[membership.id])
+    data = {"email": "new@email.com"}
+    response = client.json.patch(url, json.dumps(data))
+
+    assert response.status_code == 200
+
+
+def test_api_delete_membership(client):
+    membership = f.MembershipFactory(is_owner=True)
+    client.login(membership.user)
+    url = reverse("memberships-detail", args=[membership.id])
+    response = client.json.delete(url)
+
+    assert response.status_code == 400
+
+    f.MembershipFactory(is_owner=True, project=membership.project)
+
+    url = reverse("memberships-detail", args=[membership.id])
+    response = client.json.delete(url)
+
+    assert response.status_code == 204
+
+
+def test_api_delete_membership_without_user(client):
+    membership_owner = f.MembershipFactory(is_owner=True)
+    membership_without_user_one = f.MembershipFactory(project=membership_owner.project, user=None)
+    f.MembershipFactory(project=membership_owner.project, user=None)
+    client.login(membership_owner.user)
+    url = reverse("memberships-detail", args=[membership_without_user_one.id])
+    response = client.json.delete(url)
+
+    assert response.status_code == 204

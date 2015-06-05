@@ -14,31 +14,72 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-from rest_framework.exceptions import APIException
-from rest_framework.response import Response
-from rest_framework import status
+import json
+import codecs
+import uuid
 
 from django.utils.decorators import method_decorator
+from django.utils.translation import ugettext as _
 from django.db.transaction import atomic
 from django.db.models import signals
+from django.conf import settings
+from django.core.files.storage import default_storage
+from django.core.files.base import ContentFile
 
+from taiga.base.decorators import detail_route, list_route
+from taiga.base import exceptions as exc
+from taiga.base import response
 from taiga.base.api.mixins import CreateModelMixin
 from taiga.base.api.viewsets import GenericViewSet
-from taiga.base.decorators import detail_route
 from taiga.projects.models import Project, Membership
+from taiga.projects.issues.models import Issue
+from taiga.projects.serializers import ProjectSerializer
 
+from . import mixins
 from . import serializers
 from . import service
 from . import permissions
+from . import tasks
+from . import dump_service
+from . import throttling
+from .renderers import ExportRenderer
+
+from taiga.base.api.utils import get_object_or_404
 
 
-class Http400(APIException):
-    status_code = 400
-
-
-class ProjectImporterViewSet(CreateModelMixin, GenericViewSet):
+class ProjectExporterViewSet(mixins.ImportThrottlingPolicyMixin, GenericViewSet):
     model = Project
-    permission_classes = (permissions.ImportPermission, )
+    permission_classes = (permissions.ImportExportPermission, )
+
+    def retrieve(self, request, pk, *args, **kwargs):
+        throttle = throttling.ImportDumpModeRateThrottle()
+
+        if not throttle.allow_request(request, self):
+            self.throttled(request, throttle.wait())
+
+        project = get_object_or_404(self.get_queryset(), pk=pk)
+        self.check_permissions(request, 'export_project', project)
+
+        if settings.CELERY_ENABLED:
+            task = tasks.dump_project.delay(request.user, project)
+            tasks.delete_project_dump.apply_async((project.pk, project.slug),
+                                                  countdown=settings.EXPORTS_TTL)
+            return response.Accepted({"export_id": task.id})
+
+        path = "exports/{}/{}-{}.json".format(project.pk, project.slug, uuid.uuid4().hex)
+        content = ContentFile(ExportRenderer().render(service.project_to_dict(project),
+                                                      renderer_context={"indent": 4}).decode('utf-8'))
+
+        default_storage.save(path, content)
+        response_data = {
+            "url": default_storage.url(path)
+        }
+        return response.Ok(response_data)
+
+
+class ProjectImporterViewSet(mixins.ImportThrottlingPolicyMixin, CreateModelMixin, GenericViewSet):
+    model = Project
+    permission_classes = (permissions.ImportExportPermission, )
 
     @method_decorator(atomic)
     def create(self, request, *args, **kwargs):
@@ -47,11 +88,38 @@ class ProjectImporterViewSet(CreateModelMixin, GenericViewSet):
         data = request.DATA.copy()
         data['owner'] = data.get('owner', request.user.email)
 
+        # Create Project
         project_serialized = service.store_project(data)
 
-        if project_serialized is None:
-            raise Http400(service.get_errors())
+        if not project_serialized:
+            raise exc.BadRequest(service.get_errors())
 
+        # Create roles
+        roles_serialized = None
+        if "roles" in data:
+            roles_serialized = service.store_roles(project_serialized.object, data)
+
+        if not roles_serialized:
+            raise exc.BadRequest(_("We needed at least one role"))
+
+        # Create memberships
+        if "memberships" in data:
+            service.store_memberships(project_serialized.object, data)
+
+        try:
+            owner_membership = project_serialized.object.memberships.get(user=project_serialized.object.owner)
+            owner_membership.is_owner = True
+            owner_membership.save()
+        except Membership.DoesNotExist:
+            Membership.objects.create(
+                project=project_serialized.object,
+                email=project_serialized.object.owner.email,
+                user=project_serialized.object.owner,
+                role=project_serialized.object.roles.all().first(),
+                is_owner=True
+            )
+
+        # Create project values choicess
         if "points" in data:
             service.store_choices(project_serialized.object, data,
                                   "points", serializers.PointsExportSerializer)
@@ -86,30 +154,65 @@ class ProjectImporterViewSet(CreateModelMixin, GenericViewSet):
                 "severities" in data):
             service.store_default_choices(project_serialized.object, data)
 
-        if "roles" in data:
-            service.store_roles(project_serialized.object, data)
+        # Created custom attributes
+        if "userstorycustomattributes" in data:
+            service.store_custom_attributes(project_serialized.object, data,
+                                            "userstorycustomattributes",
+                                            serializers.UserStoryCustomAttributeExportSerializer)
 
-        if "memberships" in data:
-            service.store_memberships(project_serialized.object, data)
+        if "taskcustomattributes" in data:
+            service.store_custom_attributes(project_serialized.object, data,
+                                            "taskcustomattributes",
+                                            serializers.TaskCustomAttributeExportSerializer)
 
-        if project_serialized.object.memberships.filter(user=project_serialized.object.owner).count() == 0:
-            if project_serialized.object.roles.all().count() > 0:
-                Membership.objects.create(
-                    project=project_serialized.object,
-                    email=project_serialized.object.owner.email,
-                    user=project_serialized.object.owner,
-                    role=project_serialized.object.roles.all().first(),
-                    is_owner=True
-                )
+        if "issuecustomattributes" in data:
+            service.store_custom_attributes(project_serialized.object, data,
+                                            "issuecustomattributes",
+                                            serializers.IssueCustomAttributeExportSerializer)
 
+        # Is there any error?
         errors = service.get_errors()
         if errors:
-            raise Http400(errors)
+            raise exc.BadRequest(errors)
 
+        # Importer process is OK
         response_data = project_serialized.data
         response_data['id'] = project_serialized.object.id
         headers = self.get_success_headers(response_data)
-        return Response(response_data, status=status.HTTP_201_CREATED, headers=headers)
+        return response.Created(response_data, headers=headers)
+
+    @list_route(methods=["POST"])
+    @method_decorator(atomic)
+    def load_dump(self, request):
+        throttle = throttling.ImportDumpModeRateThrottle()
+
+        if not throttle.allow_request(request, self):
+            self.throttled(request, throttle.wait())
+
+        self.check_permissions(request, "load_dump", None)
+
+        dump = request.FILES.get('dump', None)
+
+        if not dump:
+            raise exc.WrongArguments(_("Needed dump file"))
+
+        reader = codecs.getreader("utf-8")
+
+        try:
+            dump = json.load(reader(dump))
+        except Exception:
+            raise exc.WrongArguments(_("Invalid dump format"))
+
+        if Project.objects.filter(slug=dump['slug']).exists():
+            del dump['slug']
+
+        if settings.CELERY_ENABLED:
+            task = tasks.load_project_dump.delay(request.user, dump)
+            return response.Accepted({"import_id": task.id})
+
+        project = dump_service.dict_to_project(dump, request.user.email)
+        response_data = ProjectSerializer(project).data
+        return response.Created(response_data)
 
     @detail_route(methods=['post'])
     @method_decorator(atomic)
@@ -117,14 +220,17 @@ class ProjectImporterViewSet(CreateModelMixin, GenericViewSet):
         project = self.get_object_or_none()
         self.check_permissions(request, 'import_item', project)
 
+        signals.pre_save.disconnect(sender=Issue,
+                                    dispatch_uid="set_finished_date_when_edit_issue")
+
         issue = service.store_issue(project, request.DATA.copy())
 
         errors = service.get_errors()
         if errors:
-            raise Http400(errors)
+            raise exc.BadRequest(errors)
 
         headers = self.get_success_headers(issue.data)
-        return Response(issue.data, status=status.HTTP_201_CREATED, headers=headers)
+        return response.Created(issue.data, headers=headers)
 
     @detail_route(methods=['post'])
     @method_decorator(atomic)
@@ -136,10 +242,10 @@ class ProjectImporterViewSet(CreateModelMixin, GenericViewSet):
 
         errors = service.get_errors()
         if errors:
-            raise Http400(errors)
+            raise exc.BadRequest(errors)
 
         headers = self.get_success_headers(task.data)
-        return Response(task.data, status=status.HTTP_201_CREATED, headers=headers)
+        return response.Created(task.data, headers=headers)
 
     @detail_route(methods=['post'])
     @method_decorator(atomic)
@@ -151,10 +257,10 @@ class ProjectImporterViewSet(CreateModelMixin, GenericViewSet):
 
         errors = service.get_errors()
         if errors:
-            raise Http400(errors)
+            raise exc.BadRequest(errors)
 
         headers = self.get_success_headers(us.data)
-        return Response(us.data, status=status.HTTP_201_CREATED, headers=headers)
+        return response.Created(us.data, headers=headers)
 
     @detail_route(methods=['post'])
     @method_decorator(atomic)
@@ -166,10 +272,10 @@ class ProjectImporterViewSet(CreateModelMixin, GenericViewSet):
 
         errors = service.get_errors()
         if errors:
-            raise Http400(errors)
+            raise exc.BadRequest(errors)
 
         headers = self.get_success_headers(milestone.data)
-        return Response(milestone.data, status=status.HTTP_201_CREATED, headers=headers)
+        return response.Created(milestone.data, headers=headers)
 
     @detail_route(methods=['post'])
     @method_decorator(atomic)
@@ -181,10 +287,10 @@ class ProjectImporterViewSet(CreateModelMixin, GenericViewSet):
 
         errors = service.get_errors()
         if errors:
-            raise Http400(errors)
+            raise exc.BadRequest(errors)
 
         headers = self.get_success_headers(wiki_page.data)
-        return Response(wiki_page.data, status=status.HTTP_201_CREATED, headers=headers)
+        return response.Created(wiki_page.data, headers=headers)
 
     @detail_route(methods=['post'])
     @method_decorator(atomic)
@@ -196,7 +302,7 @@ class ProjectImporterViewSet(CreateModelMixin, GenericViewSet):
 
         errors = service.get_errors()
         if errors:
-            raise Http400(errors)
+            raise exc.BadRequest(errors)
 
         headers = self.get_success_headers(wiki_link.data)
-        return Response(wiki_link.data, status=status.HTTP_201_CREATED, headers=headers)
+        return response.Created(wiki_link.data, headers=headers)

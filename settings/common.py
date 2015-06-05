@@ -15,7 +15,6 @@
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 import os.path, sys, os
-from django.utils.translation import ugettext_lazy as _
 
 BASE_DIR = os.path.dirname(os.path.dirname(__file__))
 
@@ -26,14 +25,9 @@ ADMINS = (
     ("Admin", "example@example.com"),
 )
 
-LANGUAGES = (
-    ("en", _("English")),
-    ("es", _("Spanish")),
-)
-
 DATABASES = {
     "default": {
-        "ENGINE": "django.db.backends.postgresql_psycopg2",
+        "ENGINE": "transaction_hooks.backends.postgresql_psycopg2",
         "NAME": "taiga",
     }
 }
@@ -60,11 +54,110 @@ IGNORABLE_404_STARTS = ("/phpmyadmin/",)
 
 ATOMIC_REQUESTS = True
 TIME_ZONE = "UTC"
-LANGUAGE_CODE = "en"
-USE_I18N = True
-USE_L10N = True
 LOGIN_URL="/auth/login/"
 USE_TZ = True
+
+USE_I18N = True
+USE_L10N = True
+# Language code for this installation. All choices can be found here:
+# http://www.i18nguy.com/unicode/language-identifiers.html
+LANGUAGE_CODE = 'en-us'
+
+# Languages we provide translations for, out of the box.
+LANGUAGES = [
+    #("af", "Afrikaans"),  # Afrikaans
+    #("ar", "العربية‏"),  # Arabic
+    #("ast", "Asturiano"),  # Asturian
+    #("az", "Azərbaycan dili"),  # Azerbaijani
+    #("bg", "Български"),  # Bulgarian
+    #("be", "Беларуская"),  # Belarusian
+    #("bn", "বাংলা"),  # Bengali
+    #("br", "Bretón"),  # Breton
+    #("bs", "Bosanski"),  # Bosnian
+    ("ca", "Català"),  # Catalan
+    #("cs", "Čeština"),  # Czech
+    #("cy", "Cymraeg"),  # Welsh
+    #("da", "Dansk"),  # Danish
+    #("de", "Deutsch"),  # German
+    #("el", "Ελληνικά"),  # Greek
+    ("en", "English (US)"),  # English
+    #("en-au", "English (Australia)"),  # Australian English
+    #("en-gb", "English (UK)"),  # British English
+    #("eo", "esperanta"),  # Esperanto
+    ("es", "Español"),  # Spanish
+    #("es-ar", "Español (Argentina)"),  # Argentinian Spanish
+    #("es-mx", "Español (México)"),  # Mexican Spanish
+    #("es-ni", "Español (Nicaragua)"),  # Nicaraguan Spanish
+    #("es-ve", "Español (Venezuela)"),  # Venezuelan Spanish
+    #("et", "Eesti"),  # Estonian
+    #("eu", "Euskara"),  # Basque
+    #("fa", "فارسی‏"),  # Persian
+    ("fi", "Suomi"),  # Finnish
+    ("fr", "Français"),  # French
+    #("fy", "Frysk"),  # Frisian
+    #("ga", "Irish"),  # Irish
+    #("gl", "Galego"),  # Galician
+    #("he", "עברית‏"),  # Hebrew
+    #("hi", "हिन्दी"),  # Hindi
+    #("hr", "Hrvatski"),  # Croatian
+    #("hu", "Magyar"),  # Hungarian
+    #("ia", "Interlingua"),  # Interlingua
+    #("id", "Bahasa Indonesia"),  # Indonesian
+    #("io", "IDO"),  # Ido
+    #("is", "Íslenska"),  # Icelandic
+    #("it", "Italiano"),  # Italian
+    #("ja", "日本語"),  # Japanese
+    #("ka", "ქართული"),  # Georgian
+    #("kk", "Қазақша"),  # Kazakh
+    #("km", "ភាសាខ្មែរ"),  # Khmer
+    #("kn", "ಕನ್ನಡ"),  # Kannada
+    #("ko", "한국어"),  # Korean
+    #("lb", "Lëtzebuergesch"),  # Luxembourgish
+    #("lt", "Lietuvių"),  # Lithuanian
+    #("lv", "Latviešu"),  # Latvian
+    #("mk", "Македонски"),  # Macedonian
+    #("ml", "മലയാളം"),  # Malayalam
+    #("mn", "Монгол"),  # Mongolian
+    #("mr", "मराठी"),  # Marathi
+    #("my", "မြန်မာ"),  # Burmese
+    #("nb", "Norsk (bokmål)"),  # Norwegian Bokmal
+    #("ne", "नेपाली"),  # Nepali
+    #("nl", "Nederlands"),  # Dutch
+    #("nn", "Norsk (nynorsk)"),  # Norwegian Nynorsk
+    #("os", "Ирон æвзаг"),  # Ossetic
+    #("pa", "ਪੰਜਾਬੀ"),  # Punjabi
+    #("pl", "Polski"),  # Polish
+    #("pt", "Português (Portugal)"),  # Portuguese
+    #("pt-br", "Português (Brasil)"),  # Brazilian Portuguese
+    #("ro", "Română"),  # Romanian
+    #("ru", "Русский"),  # Russian
+    #("sk", "Slovenčina"),  # Slovak
+    #("sl", "Slovenščina"),  # Slovenian
+    #("sq", "Shqip"),  # Albanian
+    #("sr", "Српски"),  # Serbian
+    #("sr-latn", "srpski"),  # Serbian Latin
+    #("sv", "Svenska"),  # Swedish
+    #("sw", "Kiswahili"),  # Swahili
+    #("ta", "தமிழ்"),  # Tamil
+    #("te", "తెలుగు"),  # Telugu
+    #("th", "ภาษาไทย"),  # Thai
+    #("tr", "Türkçe"),  # Turkish
+    #("tt", "татар теле"),  # Tatar
+    #("udm", "удмурт кыл"),  # Udmurt
+    #("uk", "Українська"),  # Ukrainian
+    #("ur", "اردو‏"),  # Urdu
+    #("vi", "Tiếng Việt"),  # Vietnamese
+    #("zh-hans", "中文(简体)"),  # Simplified Chinese
+    ("zh-hant", "中文(香港)"),  # Traditional Chinese
+]
+
+# Languages using BiDi (right-to-left) layout
+LANGUAGES_BIDI = ["he", "ar", "fa", "ur"]
+
+LOCALE_PATHS = (
+    os.path.join(BASE_DIR, "locale"),
+    os.path.join(BASE_DIR, "taiga", "locale"),
+)
 
 SITES = {
     "api": {"domain": "localhost:8000", "scheme": "http", "name": "api"},
@@ -102,12 +195,10 @@ MEDIA_URL = "http://localhost:8000/media/"
 # Static url is not widelly used by taiga (only
 # if admin is activated).
 STATIC_URL = "http://localhost:8000/static/"
-ADMIN_MEDIA_PREFIX = "http://localhost:8000/static/admin/"
 
 # Static configuration.
 MEDIA_ROOT = os.path.join(BASE_DIR, "media")
 STATIC_ROOT = os.path.join(BASE_DIR, "static")
-
 
 STATICFILES_FINDERS = [
     "django.contrib.staticfiles.finders.FileSystemFinder",
@@ -119,14 +210,8 @@ STATICFILES_DIRS = (
     # Don't forget to use absolute paths, not relative paths.
 )
 
-
 # Defautl storage
 DEFAULT_FILE_STORAGE = "taiga.base.storage.FileSystemStorage"
-
-
-LOCALE_PATHS = (
-    os.path.join(BASE_DIR, "locale"),
-)
 
 SECRET_KEY = "aw3+t2r(8(0kkrhg8)gx6i96v5^kv%6cfep9wxfom0%7dy0m9e"
 
@@ -174,12 +259,15 @@ INSTALLED_APPS = [
     "django.contrib.staticfiles",
 
     "taiga.base",
+    "taiga.base.api",
+    "taiga.locale",
     "taiga.events",
     "taiga.front",
     "taiga.users",
     "taiga.userstorage",
     "taiga.projects",
     "taiga.projects.references",
+    "taiga.projects.custom_attributes",
     "taiga.projects.history",
     "taiga.projects.notifications",
     "taiga.projects.attachments",
@@ -194,12 +282,18 @@ INSTALLED_APPS = [
     "taiga.mdrender",
     "taiga.export_import",
     "taiga.feedback",
+    "taiga.hooks.github",
+    "taiga.hooks.gitlab",
+    "taiga.hooks.bitbucket",
+    "taiga.webhooks",
 
-    "rest_framework",
     "djmail",
     "django_jinja",
+    "django_jinja.contrib._humanize",
+    "sr",
     "easy_thumbnails",
     "raven.contrib.django.raven_compat",
+    "django_transactional_cleanup",
 ]
 
 WSGI_APPLICATION = "taiga.wsgi.application"
@@ -261,6 +355,7 @@ LOGGING = {
 
 AUTH_USER_MODEL = "users.User"
 FORMAT_MODULE_PATH = "taiga.base.formats"
+
 DATE_INPUT_FORMATS = (
     "%Y-%m-%d", "%m/%d/%Y", "%d/%m/%Y", "%b %d %Y",
     "%b %d, %Y", "%d %b %Y", "%d %b, %Y", "%B %d %Y",
@@ -275,13 +370,6 @@ AUTHENTICATION_BACKENDS = (
 MAX_AGE_AUTH_TOKEN = None
 MAX_AGE_CANCEL_ACCOUNT = 30 * 24 * 60 * 60 # 30 days in seconds
 
-ANONYMOUS_USER_ID = -1
-
-MAX_SEARCH_RESULTS = 100
-
-# FIXME: this seems not be used by any module
-API_LIMIT_PER_PAGE = 0
-
 REST_FRAMEWORK = {
     "DEFAULT_AUTHENTICATION_CLASSES": (
         # Mainly used by taiga-front
@@ -290,6 +378,16 @@ REST_FRAMEWORK = {
         # Mainly used for api debug.
         "taiga.auth.backends.Session",
     ),
+    "DEFAULT_THROTTLE_CLASSES": (
+        "taiga.base.throttling.AnonRateThrottle",
+        "taiga.base.throttling.UserRateThrottle"
+    ),
+    "DEFAULT_THROTTLE_RATES": {
+        "anon": None,
+        "user": None,
+        "import-mode": None,
+        "import-dump-mode": "1/minute",
+    },
     "FILTER_BACKEND": "taiga.base.filters.FilterBackend",
     "EXCEPTION_HANDLER": "taiga.base.exceptions.exception_handler",
     "PAGINATE_BY": 30,
@@ -297,6 +395,7 @@ REST_FRAMEWORK = {
     "MAX_PAGINATE_BY": 1000,
     "DATETIME_FORMAT": "%Y-%m-%dT%H:%M:%S%z"
 }
+
 
 DEFAULT_PROJECT_TEMPLATE = "scrum"
 PUBLIC_REGISTER_ENABLED = False
@@ -331,6 +430,29 @@ TAGS_PREDEFINED_COLORS = ["#fce94f", "#edd400", "#c4a000", "#8ae234",
 # Feedback module settings
 FEEDBACK_ENABLED = True
 FEEDBACK_EMAIL = "support@taiga.io"
+
+# 0 notifications will work in a synchronous way
+# >0 an external process will check the pending notifications and will send them
+# collapsed during that interval
+CHANGE_NOTIFICATIONS_MIN_INTERVAL = 0 #seconds
+
+
+# List of functions called for filling correctly the ProjectModulesConfig associated to a project
+# This functions should receive a Project parameter and return a dict with the desired configuration
+PROJECT_MODULES_CONFIGURATORS = {
+    "github": "taiga.hooks.github.services.get_or_generate_config",
+    "gitlab": "taiga.hooks.gitlab.services.get_or_generate_config",
+    "bitbucket": "taiga.hooks.bitbucket.services.get_or_generate_config",
+}
+
+BITBUCKET_VALID_ORIGIN_IPS = ["131.103.20.165", "131.103.20.166"]
+GITLAB_VALID_ORIGIN_IPS = []
+
+EXPORTS_TTL = 60 * 60 * 24  # 24 hours
+CELERY_ENABLED = False
+WEBHOOKS_ENABLED = False
+
+from .sr import *
 
 
 # NOTE: DON'T INSERT MORE SETTINGS AFTER THIS LINE
